@@ -74,8 +74,8 @@ pub struct PaneStyles {
     pub border_type: BorderType,
     /// Pane border characters used when selected/focused
     pub border_type_selected: BorderType,
-    pub background: Color,
-    pub foreground: Color,
+    /// Pane generic style
+    pub generic: Style,
 }
 
 impl PaneStyles {
@@ -211,8 +211,7 @@ impl Styles {
                     .add_modifier(Modifier::BOLD),
                 border_type: BorderType::Rounded,
                 border_type_selected: BorderType::Double,
-                background: theme.background,
-                foreground: theme.text,
+                generic: Style::default().bg(theme.background).fg(theme.text),
             },
             status_code: StatusCodeStyles {
                 success: Style::default()

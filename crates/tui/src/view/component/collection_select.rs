@@ -17,7 +17,6 @@ use crate::{
 use derive_more::Display;
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
     text::Span,
     widgets::{Block, Clear},
 };

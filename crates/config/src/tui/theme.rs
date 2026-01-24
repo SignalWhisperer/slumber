@@ -42,7 +42,7 @@ impl Default for Theme {
             secondary: Color::Yellow,
             success: Color::Green,
             error: Color::Red,
-            text: Color::White,
+            text: Color::Reset,
             background: Color::Reset,
             border: Color::Reset,
             text_highlight: Color::White,

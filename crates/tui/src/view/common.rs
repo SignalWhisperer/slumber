@@ -26,7 +26,6 @@ use chrono::{DateTime, Duration, Utc};
 use itertools::{Itertools, Position};
 use ratatui::{
     prelude::{Buffer, Rect},
-    style::Stylize,
     symbols::merge::MergeStrategy,
     text::{Span, Text},
     widgets::{Block, Borders, Widget},
@@ -52,15 +51,14 @@ impl Generate for Pane<'_> {
     where
         Self: 'this,
     {
-        let (border_type, border_style) =
-            TuiContext::get().styles.pane.border(self.has_focus);
+        let styles = &TuiContext::get().styles.pane;
+        let (border_type, border_style) = styles.border(self.has_focus);
         Block::default()
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(border_style)
             .merge_borders(MergeStrategy::Fuzzy)
-            .fg(TuiContext::get().styles.pane.foreground)
-            .bg(TuiContext::get().styles.pane.background)
+            .style(styles.generic)
             .title(self.title)
     }
 }
@@ -88,7 +86,7 @@ impl Generate for String {
     where
         Self: 'this,
     {
-        Text::styled(self, TuiContext::get().styles.text.primary)
+        self.into()
     }
 }
 
@@ -103,7 +101,7 @@ impl Generate for &String {
     where
         Self: 'this,
     {
-        Text::styled(self, TuiContext::get().styles.text.primary)
+        self.as_str().into()
     }
 }
 
@@ -117,7 +115,7 @@ impl Generate for &Profile {
     where
         Self: 'this,
     {
-        Span::styled(self.name(), TuiContext::get().styles.text.primary)
+        self.name().to_owned().into()
     }
 }
 

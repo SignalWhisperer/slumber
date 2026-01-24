@@ -5,7 +5,7 @@
 use anyhow::Context;
 use itertools::Itertools;
 use ratatui::{
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span, Text},
 };
 use slumber_core::http::content_type::ContentType;
@@ -382,6 +382,7 @@ fn split_cow(s: Cow<'_, str>, at: usize) -> (Cow<'_, str>, Cow<'_, str>) {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use ratatui::style::Color;
 
     /// Test that JSON is highlighted, by existing styling is retained
     #[test]

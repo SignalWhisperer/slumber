@@ -14,7 +14,7 @@ use crate::{
 use ratatui::{
     layout::{Constraint, Layout},
     style::Stylize,
-    widgets::{Block, Clear},
+    widgets::Block,
 };
 use tokio::time;
 use uuid::Uuid;
