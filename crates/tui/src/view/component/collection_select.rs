@@ -115,6 +115,8 @@ impl Component for CollectionSelect {
 
 impl Draw for CollectionSelect {
     fn draw(&self, canvas: &mut Canvas, (): (), metadata: DrawMetadata) {
+        let styles = &TuiContext::get().styles;
+
         if self.open {
             // Open - show the full list
             // We're going to expand outside of our given area and overlay over
@@ -137,7 +139,7 @@ impl Draw for CollectionSelect {
 
             // Select with background to provide contrast
             canvas.render_widget(
-                Block::new().style(Style::new().bg(Color::DarkGray)),
+                Block::new().style(styles.list.highlight_inactive),
                 select_area,
             );
             canvas.draw(
@@ -155,7 +157,6 @@ impl Draw for CollectionSelect {
             );
         } else {
             // Closed - just show the selected collection
-            let styles = &TuiContext::get().styles;
             let text = Span::styled(self.text(), styles.text.highlight);
             canvas.render_widget(text, metadata.area());
         }

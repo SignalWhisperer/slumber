@@ -21,8 +21,6 @@ pub struct Theme {
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub error: Color,
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
-    pub gutter: Color,
-    #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub text: Color,
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub text_highlight: Color,
@@ -44,7 +42,6 @@ impl Default for Theme {
             secondary: Color::Yellow,
             success: Color::Green,
             error: Color::Red,
-            gutter: Color::DarkGray,
             text: Color::White,
             background: Color::Reset,
             border: Color::Reset,

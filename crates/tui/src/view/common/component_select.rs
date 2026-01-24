@@ -220,7 +220,7 @@ where
         .split(virtual_canvas.area());
         for (friend, area) in window.into_iter().zip(&*item_areas) {
             // Apply styling before the render
-            let mut style = Style::default();
+            let mut style = props.styles.normal;
             if !friend.item.enabled() {
                 style = style.patch(props.styles.disabled);
             }
@@ -300,6 +300,7 @@ where
 
 /// Styling to apply to each [ComponentSelect] item
 pub struct SelectStyles {
+    pub normal: Style,
     pub disabled: Style,
     pub highlight: Style,
     pub background_color: Color,
@@ -310,6 +311,7 @@ impl SelectStyles {
     pub fn none() -> Self {
         let styles = &TuiContext::get().styles.table;
         Self {
+            normal: Style::default(),
             disabled: Style::default(),
             highlight: Style::default(),
             background_color: styles.background_color,
@@ -320,6 +322,7 @@ impl SelectStyles {
     pub fn table() -> Self {
         let styles = &TuiContext::get().styles.table;
         Self {
+            normal: styles.text,
             disabled: styles.disabled,
             highlight: styles.highlight,
             background_color: styles.background_color,

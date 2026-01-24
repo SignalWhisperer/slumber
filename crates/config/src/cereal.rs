@@ -148,7 +148,7 @@ mod tui {
             let config = Self {
                 primary: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("primary").or(Adopt(default.primary)),
+                        Field::new("primary_color").or(Adopt(default.primary)),
                         source_map,
                     )?
                     .0,
@@ -160,31 +160,27 @@ mod tui {
                     .0,
                 secondary: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("secondary").or(Adopt(default.secondary)),
+                        Field::new("secondary_color")
+                            .or(Adopt(default.secondary)),
                         source_map,
                     )?
                     .0,
                 success: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("success").or(Adopt(default.success)),
+                        Field::new("success_color").or(Adopt(default.success)),
                         source_map,
                     )?
                     .0,
                 error: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("error").or(Adopt(default.error)),
-                        source_map,
-                    )?
-                    .0,
-                gutter: deserializer
-                    .get::<Adopt<_>>(
-                        Field::new("gutter").or(Adopt(default.gutter)),
+                        Field::new("error_color").or(Adopt(default.error)),
                         source_map,
                     )?
                     .0,
                 text: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("text").or(Adopt(default.text)),
+                        Field::new("primary_text_color")
+                            .or(Adopt(default.text)),
                         source_map,
                     )?
                     .0,

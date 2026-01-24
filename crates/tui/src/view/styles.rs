@@ -50,7 +50,9 @@ pub struct ListStyles {
 /// Styles for the action menu
 #[derive(Debug)]
 pub struct MenuStyles {
+    pub border: Style,
     pub border_type: BorderType,
+    pub normal: Style,
 }
 
 /// Styles for the Modal component
@@ -58,6 +60,7 @@ pub struct MenuStyles {
 pub struct ModalStyles {
     pub border: Style,
     pub border_type: BorderType,
+    pub normal: Style,
 }
 
 /// Styles for Pane component
@@ -192,11 +195,14 @@ impl Styles {
                 item: Style::default().fg(theme.text),
             },
             menu: MenuStyles {
+                border: Style::default().fg(theme.primary).bg(theme.background),
                 border_type: BorderType::Rounded,
+                normal: Style::default().bg(theme.background).fg(theme.text),
             },
             modal: ModalStyles {
-                border: Style::default().fg(theme.border),
+                border: Style::default().fg(theme.primary).bg(theme.background),
                 border_type: BorderType::Double,
+                normal: Style::default().bg(theme.background).fg(theme.text),
             },
             pane: PaneStyles {
                 border: Style::default().fg(theme.border),
@@ -217,9 +223,7 @@ impl Styles {
                     .fg(theme.text_highlight),
             },
             tab: TabStyles {
-                disabled: Style::default()
-                    .fg(theme.inactive)
-                    .add_modifier(Modifier::DIM),
+                disabled: Style::default().fg(theme.inactive),
                 highlight: Style::default()
                     .fg(theme.primary)
                     .add_modifier(Modifier::BOLD)
@@ -271,14 +275,16 @@ impl Styles {
                 text: Style::default()
                     .fg(theme.text_highlight)
                     .bg(theme.inactive),
-                cursor: Style::default().bg(Color::White).fg(Color::Black),
+                cursor: Style::default()
+                    .bg(theme.text_highlight)
+                    .fg(theme.inactive),
                 placeholder: Style::default().fg(theme.text),
                 invalid: Style::default()
                     .bg(theme.error)
                     .fg(theme.text_highlight),
             },
             text_window: TextWindowStyle {
-                gutter: Style::default().fg(theme.gutter),
+                gutter: Style::default().fg(theme.inactive),
             },
             syntax_highlighting: SyntaxHighlightingStyle {
                 // We only style by foreground for syntax
