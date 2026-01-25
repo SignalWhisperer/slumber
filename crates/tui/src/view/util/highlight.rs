@@ -20,7 +20,7 @@ use tree_sitter_highlight::{
     Highlight, HighlightConfiguration, HighlightEvent, Highlighter,
 };
 
-use crate::context::TuiContext;
+use crate::view::context::ViewContext;
 
 thread_local! {
     /// Cache the highlighter and its configurations, because we only need one
@@ -154,7 +154,7 @@ impl HighlightName {
     }
 
     fn style(self) -> Style {
-        let styles = &TuiContext::get().styles.syntax_highlighting;
+        let styles = ViewContext::styles().syntax_highlighting;
         match self {
             Self::Comment => styles.comment,
             Self::ConstantBuiltin => styles.builtin,

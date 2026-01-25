@@ -1,7 +1,6 @@
 //! Profile selection and preview
 
 use crate::{
-    context::TuiContext,
     util::ResultReported,
     view::{
         Generate, ViewContext,
@@ -14,7 +13,7 @@ use crate::{
         },
         component::{
             Canvas, Child, Component, ComponentId, Draw, DrawMetadata, ToChild,
-            override_template::EditableTemplate,
+            editable_template::EditableTemplate,
             sidebar_list::{SidebarListItem, SidebarListState},
         },
         persistent::{PersistentKey, PersistentStore, SessionKey},
@@ -191,9 +190,8 @@ impl Component for ProfileDetail {
 
 impl Draw for ProfileDetail {
     fn draw(&self, canvas: &mut Canvas, (): (), metadata: DrawMetadata) {
-        let title = TuiContext::get()
-            .input_engine
-            .add_hint("Profile", Action::SelectBottomPane);
+        let title =
+            ViewContext::add_binding_hint("Profile", Action::SelectBottomPane);
         let block = Pane {
             title: &title,
             has_focus: metadata.has_focus(),
@@ -220,7 +218,7 @@ impl Draw for ProfileDetail {
         .areas(header_area);
 
         // Draw header
-        let style = TuiContext::get().styles.table.header;
+        let style = ViewContext::styles().table.header;
         canvas.render_widget("Field".set_style(style), key_header_area);
         canvas.render_widget("Value".set_style(style), value_header_area);
 
@@ -337,8 +335,11 @@ struct ProfileFieldProps {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, terminal},
-        view::{event::BroadcastEvent, test_util::TestComponent},
+        test_util::{TestTerminal, terminal},
+        view::{
+            event::BroadcastEvent,
+            test_util::{TestComponent, TestHarness},
+        },
     };
     use indexmap::indexmap;
     use rstest::rstest;
@@ -373,7 +374,8 @@ mod tests {
             .send_text("123")
             .send_key(KeyCode::Enter)
             // Tell all other previews to re-render
-            .assert_broadcast([BroadcastEvent::RefreshPreviews]);
+            .assert()
+            .broadcast([BroadcastEvent::RefreshPreviews]);
         let field = &component.select[1];
         assert_eq!(field.template.template(), &"def123".into());
     }

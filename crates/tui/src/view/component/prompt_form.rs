@@ -1,5 +1,4 @@
 use crate::{
-    context::TuiContext,
     http::{PromptId, PromptReply},
     message::HttpMessage,
     view::{
@@ -139,14 +138,13 @@ impl Draw for PromptForm {
             Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
                 .areas(metadata.area());
 
-        let input_engine = &TuiContext::get().input_engine;
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
         let help = format!(
             "Change Field {previous}/{next} | Submit {submit} | Cancel {cancel}",
-            previous = input_engine.binding_display(Action::PreviousPane),
-            next = input_engine.binding_display(Action::NextPane),
-            submit = input_engine.binding_display(Action::Submit),
-            cancel = input_engine.binding_display(Action::Cancel),
+            previous = ViewContext::binding_display(Action::PreviousPane),
+            next = ViewContext::binding_display(Action::NextPane),
+            submit = ViewContext::binding_display(Action::Submit),
+            cancel = ViewContext::binding_display(Action::Cancel),
         );
         canvas
             .render_widget(Line::from(help).style(styles.text.hint), help_area);
@@ -364,7 +362,7 @@ impl Draw<PromptInputProps> for PromptInput {
             canvas.render_widget(
                 Line::styled(
                     value.as_ref(),
-                    TuiContext::get().styles.form.content,
+                    ViewContext::styles().form.content,
                 ),
                 content_area,
             );
@@ -387,7 +385,7 @@ struct InputTitle<'a> {
 
 impl Widget for InputTitle<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
 
         let title_style = if self.has_focus {
             styles.form.title_highlight
@@ -403,14 +401,13 @@ impl Widget for InputTitle<'_> {
 
         // If focused, show a hint
         if self.has_focus {
-            let input_engine = &TuiContext::get().input_engine;
             let hint = if self.editing {
                 format!(
                     " Exit {}",
-                    input_engine.binding_display(Action::Cancel)
+                    ViewContext::binding_display(Action::Cancel)
                 )
             } else {
-                format!(" Edit {}", input_engine.binding_display(Action::Edit))
+                format!(" Edit {}", ViewContext::binding_display(Action::Edit))
             };
             title.push_span(Span::from(hint).style(styles.text.hint));
         }
@@ -477,8 +474,8 @@ mod tests {
     use super::*;
     use crate::{
         message::Message,
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use itertools::Itertools;
     use ratatui::style::{Style, Styled};
@@ -526,7 +523,8 @@ mod tests {
             .send_key_modifiers(KeyCode::Up, KeyModifiers::SHIFT) // Wrap to pw
             .send_text("456") // Modify password
             .send_key(KeyCode::Enter) // Submit
-            .assert_empty();
+            .assert()
+            .empty();
 
         let (actual_request_id, replies) = assert_matches!(
             harness.messages().pop_now(),
@@ -574,7 +572,8 @@ mod tests {
             .send_text("user") // Enter username
             .send_key(KeyCode::Tab) // Switch to Select
             .send_key(KeyCode::Down) // Select second item
-            .assert_empty();
+            .assert()
+            .empty();
 
         // Values should be in the session store
         assert_eq!(
@@ -592,7 +591,7 @@ mod tests {
             &terminal,
             PromptForm::new(request_id, &prompts),
         );
-        component.int().send_key(KeyCode::Enter).assert_empty();
+        component.int().send_key(KeyCode::Enter).assert().empty();
 
         // Our previous values were submitted
         let replies = assert_matches!(
@@ -638,10 +637,11 @@ mod tests {
             .send_text("12") // Modify username
             .send_key(KeyCode::Tab) // Switch to password
             .send_text("2") // Modify password
-            .assert_empty();
+            .assert()
+            .empty();
 
         // Check terminal contents
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
         terminal.assert_buffer_lines([
             Line::styled("Username", styles.form.title),
             Line::styled("user12  ", styles.form.content),
@@ -660,7 +660,8 @@ mod tests {
             .int()
             // Done editing, then submit
             .send_keys([KeyCode::Enter, KeyCode::Enter])
-            .assert_empty();
+            .assert()
+            .empty();
         let replies = assert_matches!(
             harness.messages().pop_now(),
             Message::Http(HttpMessage::FormSubmit {
@@ -702,10 +703,11 @@ mod tests {
             .int()
             .drain_draw() // Draw so children are visible
             .send_key(KeyCode::Down)
-            .assert_empty();
+            .assert()
+            .empty();
 
         // Check terminal contents
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
         terminal.assert_buffer_lines([
             Line::styled("Species", styles.form.title_highlight),
             Line::styled("holy sh", Style::default()),
@@ -716,7 +718,7 @@ mod tests {
         ]);
 
         // Submit
-        component.int().send_key(KeyCode::Enter).assert_empty();
+        component.int().send_key(KeyCode::Enter).assert().empty();
         let replies = assert_matches!(
             harness.messages().pop_now(),
             Message::Http(HttpMessage::FormSubmit {

@@ -7,37 +7,30 @@ pub mod persistent;
 mod state;
 mod styles;
 #[cfg(test)]
-pub mod test_util;
+mod test_util;
 mod util;
 
 pub use component::ComponentMap;
-pub use context::{UpdateContext, ViewContext};
-pub use styles::Styles;
-pub use util::{PreviewPrompter, Question, TuiPrompter};
+pub use context::UpdateContext;
+pub use util::{InvalidCollection, PreviewPrompter, Question, TuiPrompter};
 
 use crate::{
-    context::TuiContext,
     http::{RequestConfig, RequestState, RequestStore},
     input::InputEvent,
     message::MessageSender,
     view::{
         component::{Canvas, Component, ComponentExt, Root},
+        context::ViewContext,
         debug::DebugMonitor,
         event::Event,
     },
 };
 use crossterm::clipboard::CopyToClipboard;
 use indexmap::IndexMap;
-use ratatui::{
-    buffer::Buffer,
-    crossterm::execute,
-    layout::{Constraint, Layout},
-    text::{Span, Text},
-    widgets::Widget,
-};
-use slumber_config::Action;
+use ratatui::{buffer::Buffer, crossterm::execute, text::Span};
+use slumber_config::Config;
 use slumber_core::{
-    collection::{Collection, CollectionFile, ProfileId},
+    collection::{Collection, ProfileId},
     database::CollectionDatabase,
     http::RequestId,
 };
@@ -62,6 +55,7 @@ use tracing::{trace, trace_span, warn};
 /// events), so we need to make sure the queue is constantly being drained.
 #[derive(Debug)]
 pub struct View {
+    /// Root of the component tree
     root: Root,
     /// Populated iff the `debug` config field is enabled. This tracks view
     /// metrics and displays them to the user.
@@ -69,21 +63,35 @@ pub struct View {
 }
 
 impl View {
+    /// Initialize the view. This will build out the entire component tree
+    ///
+    /// This accepts a loaded collection *or* an error. If the collection fails
+    /// to load, we'll show the error and wait for the user to fix it or exit.
     pub fn new(
-        collection: &Arc<Collection>,
+        config: Arc<Config>,
+        collection: Result<Arc<Collection>, InvalidCollection>,
         database: CollectionDatabase,
         messages_tx: MessageSender,
     ) -> Self {
-        ViewContext::init(Arc::clone(collection), database, messages_tx);
+        // If the collection is invalid, just put an empty one in the view
+        // context. We *shouldn't* hit any code that tries to use it because
+        // we won't be drawing the normal view, but it's easiest just to have
+        // it there anyway.
+        ViewContext::init(
+            config,
+            collection.as_ref().map(Arc::clone).unwrap_or_default(),
+            database,
+            messages_tx,
+        );
 
-        let debug_monitor = if TuiContext::get().config.tui.debug {
+        let debug_monitor = if ViewContext::config().tui.debug {
             Some(DebugMonitor::default())
         } else {
             None
         };
 
         Self {
-            root: Root::new(),
+            root: Root::new(collection),
             debug_monitor,
         }
     }
@@ -100,43 +108,13 @@ impl View {
             return ComponentMap::default();
         }
 
-        // If debug monitor is enabled, use it to capture the view duration
+        // If debug monitor is enabled, use it to capture view duration
         if let Some(debug_monitor) = &self.debug_monitor {
             debug_monitor
                 .draw(buffer, |buffer| Canvas::draw_all(buffer, &self.root, ()))
         } else {
             Canvas::draw_all(buffer, &self.root, ())
         }
-    }
-
-    /// When the collection fails to load on first launch, we can't show the
-    /// full UI yet. This draws an error state. The TUI loop should be watching
-    /// the collection file so we can retry initialization when the error is
-    /// fixed.
-    pub fn draw_collection_load_error(
-        buffer: &mut Buffer,
-        collection_file: &CollectionFile,
-        error: &anyhow::Error,
-    ) {
-        let context = TuiContext::get();
-        let [message_area, _, error_area] = Layout::vertical([
-            Constraint::Length(2),
-            Constraint::Length(1), // A nice gap
-            Constraint::Min(1),
-        ])
-        .areas(*buffer.area());
-        Widget::render(error.generate(), error_area, buffer);
-        Widget::render(
-            Text::styled(
-                format!(
-                    "Watching {collection_file} for changes...\n{} to exit",
-                    context.input_engine.binding_display(Action::ForceQuit),
-                ),
-                context.styles.text.primary,
-            ),
-            message_area,
-            buffer,
-        );
     }
 
     /// Persist all UI state to the database. This should be called at the end
@@ -294,8 +272,9 @@ pub enum RequestDisposition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::{
-        TestHarness, TestTerminal, assert_events, harness, terminal,
+    use crate::{
+        test_util::{TestTerminal, assert_events, terminal},
+        view::test_util::{TestHarness, harness},
     };
     use rstest::rstest;
     use slumber_core::collection::Collection;
@@ -306,7 +285,8 @@ mod tests {
     fn test_initial_draw(harness: TestHarness, terminal: TestTerminal) {
         let collection = Collection::factory(());
         let mut view = View::new(
-            &collection.into(),
+            Config::default().into(),
+            Ok(collection.into()),
             harness.database.clone(),
             harness.messages_tx(),
         );

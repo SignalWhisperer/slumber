@@ -300,9 +300,11 @@ impl Scrollback {
 mod tests {
     use super::*;
     use crate::{
-        context::TuiContext,
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::{
+            context::ViewContext,
+            test_util::{TestComponent, TestHarness, harness},
+        },
     };
     use ratatui::{style::Styled, text::Line};
     use rstest::{fixture, rstest};
@@ -332,28 +334,30 @@ mod tests {
 
         // Scroll back
         assert_eq!(component.text(), "");
-        component.int().send_key(KeyCode::Up).assert_empty();
+        component.int().send_key(KeyCode::Up).assert().empty();
         assert_eq!(component.text(), "three");
 
         // Scroll forward
         component
             .int()
             .send_keys([KeyCode::Up, KeyCode::Up, KeyCode::Down])
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(component.text(), "two");
 
         // Submit
         component
             .int()
             .send_key(KeyCode::Enter)
-            .assert_emitted([CommandTextBoxEvent::Submit]);
+            .assert()
+            .emitted([CommandTextBoxEvent::Submit]);
         assert_eq!(component.text(), "two");
 
         // Submission resets scrollback state, so now when we go back from two
         // we get three instead of one
-        component.int().send_key(KeyCode::Up).assert_empty();
+        component.int().send_key(KeyCode::Up).assert().empty();
         assert_eq!(component.text(), "three");
-        component.int().send_key(KeyCode::Up).assert_empty();
+        component.int().send_key(KeyCode::Up).assert().empty();
         assert_eq!(component.text(), "one");
     }
 
@@ -364,7 +368,7 @@ mod tests {
         #[with(6, 3)] terminal: TestTerminal,
         _history_db: (),
     ) {
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
         let mut component = TestComponent::new(
             &harness,
             &terminal,
@@ -379,7 +383,8 @@ mod tests {
             .int()
             .send_text("t")
             .send_key_modifiers(KeyCode::Char('r'), KeyModifiers::CTRL)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(component.text(), "t");
         assert_eq!(get_search_items(&component).unwrap(), &["three", "two"]);
         terminal.assert_buffer_lines([
@@ -395,7 +400,7 @@ mod tests {
         ]);
 
         // Modifying while in search mode should update what's visible
-        component.int().send_text("h").assert_empty();
+        component.int().send_text("h").assert().empty();
         assert_eq!(component.text(), "th");
         assert_eq!(get_search_items(&component).unwrap(), &["three"]);
 
@@ -403,7 +408,8 @@ mod tests {
         component
             .int()
             .send_key(KeyCode::Enter)
-            .assert_emitted([CommandTextBoxEvent::Submit]);
+            .assert()
+            .emitted([CommandTextBoxEvent::Submit]);
         assert_eq!(component.text(), "three");
     }
 
@@ -426,7 +432,8 @@ mod tests {
             .int()
             .send_text("t")
             .send_key_modifiers(KeyCode::Char('r'), KeyModifiers::CTRL)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(get_search_items(&component).unwrap(), &["three", "two"]);
 
         // Escape exits without modifying the text. This exits both the search
@@ -434,7 +441,8 @@ mod tests {
         component
             .int()
             .send_key(KeyCode::Esc)
-            .assert_emitted([CommandTextBoxEvent::Cancel]);
+            .assert()
+            .emitted([CommandTextBoxEvent::Cancel]);
         assert_eq!(component.text(), "t");
     }
 
@@ -458,7 +466,8 @@ mod tests {
             .int()
             .send_text("teefs")
             .send_key_modifiers(KeyCode::Char('r'), KeyModifiers::CTRL)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(component.text(), "teefs");
         assert_eq!(get_search_items(&component), None);
     }

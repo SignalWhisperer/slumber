@@ -2,7 +2,7 @@
 
 use assert_cmd::{Command, cargo::cargo_bin_cmd};
 use slumber_core::collection::CollectionFile;
-use slumber_util::{TempDir, paths::DATA_DIRECTORY_ENV_VARIABLE, temp_dir};
+use slumber_util::{TempDir, temp_dir};
 use std::{
     env,
     ops::Deref,
@@ -16,7 +16,7 @@ pub fn slumber() -> (Command, TempDir) {
     let mut command = cargo_bin_cmd!("slumber_cli");
     command
         .current_dir(tests_dir())
-        .env(DATA_DIRECTORY_ENV_VARIABLE, data_dir.deref());
+        .args(["--data-dir", data_dir.deref().to_str().unwrap()]);
     (command, data_dir)
 }
 

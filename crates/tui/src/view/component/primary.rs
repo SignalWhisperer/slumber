@@ -13,7 +13,7 @@ use crate::{
             Canvas, Child, ComponentExt, ComponentId, Draw, DrawMetadata,
             ToChild,
             exchange_pane::ExchangePane,
-            history::{History, HistoryEvent},
+            history::History,
             primary::view_state::{
                 DefaultPane, PrimaryLayout, Sidebar, SidebarPane, ViewState,
             },
@@ -536,9 +536,6 @@ impl Component for PrimaryView {
                 }
                 SidebarListEvent::Close => self.view.close_sidebar(),
             })
-            .emitted(self.history.to_emitter(), |event| match event {
-                HistoryEvent::Close => self.view.close_sidebar(),
-            })
             // Handle our own menu action type
             .emitted(self.global_actions_emitter, |menu_action| {
                 match menu_action {
@@ -652,8 +649,8 @@ mod tests {
     use crate::{
         http::RequestConfig,
         message::{Message, RecipeCopyTarget},
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::{event::BroadcastEvent, test_util::TestComponent},
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use rstest::rstest;
     use slumber_core::http::BuildOptions;
@@ -665,18 +662,22 @@ mod tests {
         harness: &mut TestHarness,
         terminal: &'term TestTerminal,
     ) -> TestComponent<'term, PrimaryView> {
-        let mut component =
-            TestComponent::new(harness, terminal, PrimaryView::new());
-        // Initial events
         let recipe_id = harness.collection.first_recipe_id().clone();
         let profile_id = harness.collection.first_profile_id().clone();
-        component.int().drain_draw().assert_broadcast([
-            BroadcastEvent::SelectedRecipe(Some(recipe_id)),
-            BroadcastEvent::SelectedProfile(Some(profile_id)),
-            // The two events above each trigger a request selection
-            BroadcastEvent::SelectedRequest(None),
-            BroadcastEvent::SelectedRequest(None),
-        ]);
+        let component =
+            TestComponent::builder(harness, terminal, PrimaryView::new())
+                .with_default_props()
+                // Initial events
+                .with_assert_events(|assert| {
+                    assert.broadcast([
+                        BroadcastEvent::SelectedRecipe(Some(recipe_id)),
+                        BroadcastEvent::SelectedProfile(Some(profile_id)),
+                        // Two events above each trigger a request selection
+                        BroadcastEvent::SelectedRequest(None),
+                        BroadcastEvent::SelectedRequest(None),
+                    ]);
+                })
+                .build();
         // Clear template preview messages so we can test what we want
         harness.messages().clear();
         component
@@ -710,12 +711,12 @@ mod tests {
     #[rstest]
     fn test_edit_recipe(mut harness: TestHarness, terminal: TestTerminal) {
         let mut component = create_component(&mut harness, &terminal);
-        component.int().drain_draw().assert_empty();
+        component.int().drain_draw().assert().empty();
         harness.messages().clear(); // Clear init junk
         let expected_location =
             harness.collection.first_recipe().location.clone();
 
-        component.int().action(&["Edit Recipe"]).assert_empty();
+        component.int().action(&["Edit Recipe"]).assert().empty();
         // Event should be converted into a message appropriately
         let location = assert_matches!(
             harness.messages().pop_now(),
@@ -728,12 +729,12 @@ mod tests {
     #[rstest]
     fn test_edit_profile(mut harness: TestHarness, terminal: TestTerminal) {
         let mut component = create_component(&mut harness, &terminal);
-        component.int().drain_draw().assert_empty();
+        component.int().drain_draw().assert().empty();
         harness.messages().clear(); // Clear init junk
         let expected_location =
             harness.collection.first_profile().location.clone();
 
-        component.int().action(&["Edit Profile"]).assert_empty();
+        component.int().action(&["Edit Profile"]).assert().empty();
         // Event should be converted into a message appropriately
         let location = assert_matches!(
             harness.messages().pop_now(),
@@ -761,7 +762,8 @@ mod tests {
             .int()
             .send_key(KeyCode::Char('1')) // Select recipe detail
             .action(&["Copy", label])
-            .assert_empty();
+            .assert()
+            .empty();
 
         let actual_target = assert_matches!(
             harness.messages().pop_now(),
@@ -773,7 +775,8 @@ mod tests {
             .int()
             .send_key(KeyCode::Char('r')) // Select recipe list
             .action(&["Copy", label])
-            .assert_empty();
+            .assert()
+            .empty();
 
         let actual_target = assert_matches!(
             harness.messages().pop_now(),

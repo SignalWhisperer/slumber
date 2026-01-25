@@ -1,15 +1,12 @@
-use crate::{
-    context::TuiContext,
-    view::{
-        Generate,
-        common::select::{Select, SelectEventKind, SelectListProps},
-        component::{
-            Canvas, Child, Component, ComponentExt, ComponentId, Draw,
-            DrawMetadata, ToChild,
-        },
-        context::UpdateContext,
-        event::{Emitter, Event, EventMatch, LocalEvent, ToEmitter},
+use crate::view::{
+    Generate,
+    common::select::{Select, SelectEventKind, SelectListProps},
+    component::{
+        Canvas, Child, Component, ComponentExt, ComponentId, Draw,
+        DrawMetadata, ToChild,
     },
+    context::{UpdateContext, ViewContext},
+    event::{Emitter, Event, EventMatch, LocalEvent, ToEmitter},
 };
 use itertools::Itertools;
 use ratatui::{
@@ -386,7 +383,7 @@ impl Component for ActionMenuContent {
 
 impl Draw for ActionMenuContent {
     fn draw(&self, canvas: &mut Canvas, (): (), metadata: DrawMetadata) {
-        let styles = &TuiContext::get().styles.menu;
+        let styles = ViewContext::styles().menu;
         let areas = self.areas(metadata.area().as_position());
 
         // Clear content/styling underneath all layers. This has to happen
@@ -520,8 +517,7 @@ impl Display for MenuItemDisplay {
                 shortcut: Some(shortcut),
                 ..
             } => {
-                let s =
-                    TuiContext::get().input_engine.add_hint(name, *shortcut);
+                let s = ViewContext::add_binding_hint(name, *shortcut);
                 write!(fmt, "{s}")
             }
             Self::Action { name, .. } => {
@@ -549,10 +545,7 @@ impl Generate for &MenuItemDisplay {
                 // If a shortcut is given, include the binding in the text
                 shortcut
                     .map(|shortcut| {
-                        TuiContext::get()
-                            .input_engine
-                            .add_hint(name, shortcut)
-                            .into()
+                        ViewContext::add_binding_hint(name, shortcut).into()
                     })
                     .unwrap_or_else(|| name.as_str().into())
             }
@@ -601,8 +594,11 @@ fn build_select(items: Vec<MenuItemDisplay>) -> Select<MenuItemDisplay> {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::{event::ToEmitter, test_util::TestComponent},
+        test_util::{TestTerminal, terminal},
+        view::{
+            event::ToEmitter,
+            test_util::{TestComponent, TestHarness, harness},
+        },
     };
     use rstest::rstest;
     use terminput::KeyCode;
@@ -718,19 +714,22 @@ mod tests {
         component
             .int()
             .action(&["Action 2"])
-            .assert_emitted([TestAction::Action2]);
+            .assert()
+            .emitted([TestAction::Action2]);
 
         // Actions can be performed by shortcut
         component
             .int()
             .send_keys([KeyCode::Char('x'), KeyCode::Char('e')])
-            .assert_emitted([TestAction::Shortcutted]);
+            .assert()
+            .emitted([TestAction::Shortcutted]);
 
         // Disabled action *cannot* be performed by shortcut
         component
             .int()
             .send_keys([KeyCode::Char('x'), KeyCode::Char('z')])
-            .assert_emitted([]);
+            .assert()
+            .emitted([]);
     }
 
     /// Various input sequences on multiple levels of nested actions
@@ -772,7 +771,8 @@ mod tests {
             .int()
             .send_key(KeyCode::Char('x'))
             .send_keys(inputs.iter().copied())
-            .assert_emitted([expected_action]);
+            .assert()
+            .emitted([expected_action]);
     }
 
     /// There once was a bug where the select event wasn't handled correctly
@@ -800,6 +800,7 @@ mod tests {
         component
             .int()
             .send_keys([KeyCode::Char('x'), KeyCode::Right, KeyCode::Enter])
-            .assert_emitted([TestAction::Nested1]);
+            .assert()
+            .emitted([TestAction::Nested1]);
     }
 }

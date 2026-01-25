@@ -1,9 +1,9 @@
 //! Test utilities specific to the TUI *view*
 
 use crate::{
-    context::TuiContext,
     http::RequestStore,
-    test_util::{TestHarness, TestTerminal},
+    message::{Message, MessageSender},
+    test_util::{MessageQueue, TestTerminal},
     view::{
         ComponentMap, UpdateContext,
         common::actions::{ActionMenu, MenuItem},
@@ -18,20 +18,100 @@ use crate::{
 };
 use itertools::Itertools;
 use ratatui::layout::Rect;
-use slumber_config::Action;
-use slumber_core::database::CollectionDatabase;
+use rstest::fixture;
+use slumber_config::{Action, Config};
+use slumber_core::{collection::Collection, database::CollectionDatabase};
+use slumber_util::{Factory, assert_matches};
 use std::{
     cell::RefCell,
     fmt::Debug,
     iter,
     ops::{Deref, DerefMut},
     rc::Rc,
+    sync::Arc,
 };
 use terminput::{
     KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton,
     MouseEvent, MouseEventKind,
 };
 use tracing::trace_span;
+
+/// Get a test harness, with a clean terminal etc. See [TestHarness].
+#[fixture]
+pub fn harness() -> TestHarness {
+    TestHarness::new(Collection::factory(()))
+}
+
+/// A container for all singleton types needed for tests. Most TUI tests will
+/// need one of these. This should be your interface for modifying any global
+/// state.
+pub struct TestHarness {
+    // These are public because we don't care about external mutation
+    pub collection: Arc<Collection>,
+    pub database: CollectionDatabase,
+    /// `RefCell` needed so multiple components can hang onto this at once.
+    /// Otherwise we would have to pass it to every single draw and update fn.
+    request_store: Rc<RefCell<RequestStore>>,
+    messages: MessageQueue,
+}
+
+impl TestHarness {
+    /// Create a new test harness and initialize state
+    pub fn new(collection: Collection) -> Self {
+        let messages = MessageQueue::new();
+        let database = CollectionDatabase::factory(());
+        let request_store =
+            Rc::new(RefCell::new(RequestStore::new(database.clone())));
+        let collection = Arc::new(collection);
+        ViewContext::init(
+            Config::default().into(),
+            Arc::clone(&collection),
+            database.clone(),
+            messages.tx(),
+        );
+        TestHarness {
+            collection,
+            database,
+            request_store,
+            messages,
+        }
+    }
+
+    /// Get a mutable reference to the request store
+    pub fn request_store_mut(&self) -> impl DerefMut<Target = RequestStore> {
+        self.request_store.borrow_mut()
+    }
+
+    /// Get an `Rc` clone to the request store
+    pub fn request_store_owned(&self) -> Rc<RefCell<RequestStore>> {
+        Rc::clone(&self.request_store)
+    }
+
+    /// Get a [PersistentStore] pointing at the test database
+    pub fn persistent_store(&self) -> PersistentStore {
+        PersistentStore::new(self.database.clone())
+    }
+
+    /// Get a mutable reference to the message queue
+    pub fn messages(&mut self) -> &mut MessageQueue {
+        &mut self.messages
+    }
+
+    /// Get a clone of the message sender
+    pub fn messages_tx(&self) -> MessageSender {
+        self.messages.tx()
+    }
+
+    /// Pop a [Message::Spawn] off the queue and run the task
+    ///
+    /// Panic if the queue is empty or the next message isn't `Spawn`.
+    pub async fn run_task(&mut self) {
+        let future = assert_matches!(
+            self.messages().pop_now(), Message::Spawn(future) => future
+        );
+        future.await;
+    }
+}
 
 /// A wrapper around a component that makes it easy to test. This provides lots
 /// of methods for sending events to the component. The goal is to make
@@ -81,6 +161,8 @@ where
             area: terminal.area(),
             component: TestWrapper::new(data),
             props: None,
+            // Most components shouldn't emit any events on init
+            assert_events: Box::new(|assert| assert.empty()),
         }
     }
 
@@ -160,13 +242,6 @@ where
     /// the events that were propagated (i.e. not consumed by the component or
     /// its children), in the order they were queued/handled.
     fn drain_events(&mut self) -> Vec<Event> {
-        // Safety check, prevent annoying bugs
-        assert!(
-            self.component_map.is_visible(&self.component),
-            "Component {component:?} is not visible, it can't handle events",
-            component = self.component
-        );
-
         let mut persistent_store = PersistentStore::new(self.database.clone());
         let mut propagated = Vec::new();
         let mut context = UpdateContext {
@@ -214,6 +289,11 @@ pub struct TestComponentBuilder<'term, T, Props> {
     area: Rect,
     component: TestWrapper<T>,
     props: Option<Props>,
+    /// Function to call after component initialization to assert on the list
+    /// of propagated events in the event queue. By default, it should use
+    /// [AssertPropagated::empty] to assert that the queue is empty.
+    #[expect(clippy::type_complexity)]
+    assert_events: Box<dyn FnOnce(AssertEvents<'_, '_, T>)>,
 }
 
 impl<'term, T, Props> TestComponentBuilder<'term, T, Props>
@@ -241,10 +321,32 @@ where
         self
     }
 
-    /// Build the component and do its initial draw. Components aren't useful
-    /// until they've been drawn once, because they won't receive events
-    /// until they're marked as visible. For this reason, this constructor
-    /// takes care of all the things you would immediately have to do anyway.
+    /// Customize the assertion that is run on the list of events propagated on
+    /// init
+    ///
+    /// After the test component is created, all events in the queue are
+    /// drained, then the component is drawn. If there are any remaining
+    /// events in the queue from the initialization OR subsequent updates, they
+    /// can be asserted on here. By default, this calls
+    /// [AssertPropagated::empty], meaning the test will fail if any events
+    /// were queued and not handled in the initial update call.
+    ///
+    /// Call this with a custom assertion if your component intentionally queues
+    /// events during startup.
+    pub fn with_assert_events(
+        mut self,
+        assert_events: impl 'static + FnOnce(AssertEvents<'_, '_, T>),
+    ) -> Self {
+        self.assert_events = Box::new(assert_events);
+        self
+    }
+
+    /// Build the component, process its initialization events, then do an
+    /// initial draw
+    ///
+    /// Draining initial events and drawing are considered universal
+    /// functionality that all components will receive as part of their
+    /// normal operation.
     pub fn build(self) -> TestComponent<'term, T> {
         let mut component = TestComponent {
             terminal: self.terminal,
@@ -255,11 +357,20 @@ where
             component: self.component,
             has_focus: true,
         };
-        // Do an initial draw to set up state, then handle any triggered events
-        TestComponent::draw(
-            &mut component,
-            self.props.expect("Props not set for test component"),
-        );
+
+        // Drain any events that may have been queued during component init,
+        // then draw with the latest state
+        let props = self.props.expect("Props not set for test component");
+        let propagated = component.drain_events();
+        component.draw(props);
+
+        // Use our closure to decide what events are expected
+        let assert = AssertEvents {
+            component: &mut component,
+            propagated,
+        };
+        (self.assert_events)(assert);
+
         component
     }
 }
@@ -268,19 +379,19 @@ where
 /// various interactions. All chains should be terminated with an assertion
 /// on the events propagated by the interactions. Each interaction will be
 /// succeeded by a single draw, to update the view as needed.
-#[must_use = "Propagated events must be checked"]
+#[must_use = "Complete interaction with assert()"]
 #[derive(derive_more::Debug)]
-pub struct Interact<'term, 'a, Component, Props> {
-    component: &'a mut TestComponent<'term, Component>,
+pub struct Interact<'term, 'comp, Component, Props> {
+    component: &'comp mut TestComponent<'term, Component>,
     /// A repeatable function that generates a props object for each draw. In
     /// most cases this will just be `Props::default` or a function that
     /// repeatedly returns the same static value. In some cases though, the
     /// value can't be held across draws and must be recreated each time.
-    props_factory: Box<dyn 'a + Fn() -> Props>,
+    props_factory: Box<dyn 'comp + Fn() -> Props>,
     propagated: Vec<Event>,
 }
 
-impl<Comp, Props> Interact<'_, '_, Comp, Props>
+impl<'term, 'comp, Comp, Props> Interact<'term, 'comp, Comp, Props>
 where
     Comp: Component + Draw<Props> + Debug,
 {
@@ -338,23 +449,23 @@ where
     /// draw. This will include the bound action for the event, based on the key
     /// code or mouse button. See [Self::update_draw] about return value.
     pub fn send_input(self, terminal_event: terminput::Event) -> Self {
-        let input_event = TuiContext::get()
-            .input_engine
-            .convert_event(terminal_event)
-            .expect("Event does not map to an input event");
+        let input_event = ViewContext::with_input(|input| {
+            input.convert_event(terminal_event)
+        })
+        .expect("Event does not map to an input event");
         self.update_draw(Event::Input(input_event))
     }
 
     /// Simulate a left click at the given location, then drain events and draw.
     /// See [Self::update_draw] about return value.
     pub fn click(self, x: u16, y: u16) -> Self {
-        let crossterm_event = terminput::Event::Mouse(MouseEvent {
+        let term_event = terminput::Event::Mouse(MouseEvent {
             kind: MouseEventKind::Up(MouseButton::Left),
             column: x,
             row: y,
             modifiers: KeyModifiers::NONE,
         });
-        self.send_input(crossterm_event)
+        self.send_input(term_event)
     }
 
     /// Simulate a key press on this component. This will generate the
@@ -371,13 +482,13 @@ where
         code: KeyCode,
         modifiers: KeyModifiers,
     ) -> Self {
-        let crossterm_event = terminput::Event::Key(KeyEvent {
+        let term_event = terminput::Event::Key(KeyEvent {
             code,
             modifiers,
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
         });
-        self.send_input(crossterm_event)
+        self.send_input(term_event)
     }
 
     /// Send multiple key events in sequence
@@ -473,10 +584,43 @@ where
         self
     }
 
+    /// Get the underlying component value
+    pub fn component_data(&self) -> &Comp {
+        &self.component.component.inner
+    }
+
+    /// Get propagated events as a slice
+    pub fn propagated(&self) -> &[Event] {
+        &self.propagated
+    }
+
+    /// Get an [AssertEvents] to assert properties about the list of events
+    /// propagated by this interaction
+    pub fn assert(self) -> AssertEvents<'term, 'comp, Comp> {
+        AssertEvents {
+            component: self.component,
+            propagated: self.propagated,
+        }
+    }
+}
+
+/// Assert on the list of propagated events
+#[must_use = "Propagated events must be checked"]
+pub struct AssertEvents<'term, 'comp, Comp> {
+    component: &'comp mut TestComponent<'term, Comp>,
+    propagated: Vec<Event>,
+}
+
+impl<Comp> AssertEvents<'_, '_, Comp> {
+    /// Get the underlying component value
+    pub fn component_data(&self) -> &Comp {
+        &*self.component
+    }
+
     /// Assert that no events were propagated, i.e. the component handled all
     /// given and generated events.
     #[track_caller]
-    pub fn assert_empty(self) {
+    pub fn empty(self) {
         assert!(
             self.propagated.is_empty(),
             "Expected no propagated events, but got {:?}",
@@ -487,21 +631,20 @@ where
     /// Assert that one or more [BroadcastEvent]s were emitted. No other events
     /// should have bene propagated.
     #[track_caller]
-    pub fn assert_broadcast(
-        self,
-        expected: impl IntoIterator<Item = BroadcastEvent>,
-    ) {
-        let actual = self
-            .propagated
-            .into_iter()
-            .map(|event| {
-                if let Event::Broadcast(event) = event {
-                    event
-                } else {
-                    panic!("Expected only broadcasts, but received: {event:#?}")
-                }
-            })
-            .collect_vec();
+    pub fn broadcast(self, expected: impl IntoIterator<Item = BroadcastEvent>) {
+        let mut actual = Vec::new();
+        for event in self.propagated {
+            // Do this map in a for loop instead of map() so the panic gets
+            // attributed to our caller
+            if let Event::Broadcast(event) = event {
+                actual.push(event);
+            } else {
+                panic!(
+                    "Expected only broadcasts to have been propagated,\
+                        but received: {event:#?}"
+                )
+            }
+        }
         let expected = expected.into_iter().collect_vec();
         assert_eq!(actual, expected);
     }
@@ -510,36 +653,26 @@ where
     /// a specific sequence. Requires `PartialEq` to be implemented for the
     /// emitted event type.
     #[track_caller]
-    pub fn assert_emitted<E>(self, expected: impl IntoIterator<Item = E>)
+    pub fn emitted<E>(self, expected: impl IntoIterator<Item = E>)
     where
         Comp: ToEmitter<E>,
         E: LocalEvent + PartialEq,
     {
         let emitter = self.component.to_emitter();
-        let emitted = self
-            .propagated
-            .into_iter()
-            .map(|event| {
-                emitter.emitted(event).unwrap_or_else(|event| {
-                    panic!(
-                        "Expected only events emitted by {emitter} to have \
+        let mut emitted = Vec::new();
+        for event in self.propagated {
+            // Do this map in a for loop instead of map() so the panic gets
+            // attributed to our caller
+            match emitter.emitted(event) {
+                Ok(event) => emitted.push(event),
+                Err(event) => panic!(
+                    "Expected only events emitted by {emitter} to have \
                         been propagated, but received: {event:#?}",
-                    )
-                })
-            })
-            .collect_vec();
+                ),
+            }
+        }
         let expected = expected.into_iter().collect_vec();
         assert_eq!(emitted, expected);
-    }
-
-    /// Get the underlying component value
-    pub fn component_data(&self) -> &Comp {
-        &self.component.component.inner
-    }
-
-    /// Get propagated events as a slice
-    pub fn into_propagated(self) -> Vec<Event> {
-        self.propagated
     }
 }
 

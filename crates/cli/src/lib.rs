@@ -10,11 +10,12 @@ mod util;
 
 pub use util::print_error;
 
+#[cfg(feature = "import")]
+use crate::commands::import::ImportCommand;
 use crate::{
     commands::{
         collection::CollectionCommand, config::ConfigCommand, db::DbCommand,
-        generate::GenerateCommand, import::ImportCommand, new::NewCommand,
-        request::RequestCommand,
+        generate::GenerateCommand, new::NewCommand, request::RequestCommand,
     },
     completions::{complete_collection_path, complete_log_level},
 };
@@ -87,6 +88,11 @@ pub struct GlobalArgs {
     /// Print the path to the log file for this session
     #[clap(long)]
     pub print_log_path: bool,
+
+    /// Test only: set the directory for the config, database, and log files
+    #[cfg(debug_assertions)]
+    #[clap(long, hide = true)]
+    pub data_dir: Option<PathBuf>,
 }
 
 impl GlobalArgs {
@@ -97,6 +103,18 @@ impl GlobalArgs {
     }
 }
 
+impl Default for GlobalArgs {
+    fn default() -> Self {
+        Self {
+            file: None,
+            log_level: LevelFilter::OFF,
+            print_log_path: false,
+            #[cfg(debug_assertions)]
+            data_dir: None,
+        }
+    }
+}
+
 /// A CLI subcommand
 #[derive(Clone, Debug, clap::Subcommand)]
 pub enum CliCommand {
@@ -104,6 +122,7 @@ pub enum CliCommand {
     Config(ConfigCommand),
     Db(DbCommand),
     Generate(GenerateCommand),
+    #[cfg(feature = "import")]
     Import(ImportCommand),
     New(NewCommand),
     Request(RequestCommand),
@@ -117,11 +136,18 @@ impl CliCommand {
             println!("Logging to {}", path.display());
         }
 
+        // The --data-dir flag is used in integration tests to isolate files
+        #[cfg(debug_assertions)]
+        if let Some(path) = global.data_dir.as_deref() {
+            paths::set_data_directory(path.to_owned());
+        }
+
         match self {
             Self::Collection(command) => command.execute(global).await,
             Self::Config(command) => command.execute(global).await,
             Self::Db(command) => command.execute(global).await,
             Self::Generate(command) => command.execute(global).await,
+            #[cfg(feature = "import")]
             Self::Import(command) => command.execute(global).await,
             Self::New(command) => command.execute(global).await,
             Self::Request(command) => command.execute(global).await,

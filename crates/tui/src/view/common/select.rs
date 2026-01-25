@@ -1,13 +1,10 @@
-use crate::{
-    context::TuiContext,
-    view::{
-        Generate,
-        common::scrollbar::Scrollbar,
-        component::{Canvas, Component, ComponentId, Draw, DrawMetadata},
-        context::UpdateContext,
-        event::{Emitter, Event, EventMatch, ToEmitter},
-        persistent::{PersistentKey, PersistentStore},
-    },
+use crate::view::{
+    Generate,
+    common::scrollbar::Scrollbar,
+    component::{Canvas, Component, ComponentId, Draw, DrawMetadata},
+    context::{UpdateContext, ViewContext},
+    event::{Emitter, Event, EventMatch, ToEmitter},
+    persistent::{PersistentKey, PersistentStore},
 };
 use itertools::Itertools;
 use ratatui::{
@@ -543,7 +540,7 @@ where
         props: SelectListProps,
         metadata: DrawMetadata,
     ) {
-        let styles = &TuiContext::get().styles.list;
+        let styles = ViewContext::styles().list;
 
         // Draw list
         let items: Vec<ListItem<'_>> = self
@@ -663,6 +660,17 @@ impl<Item> SelectEvent<Item> {
     }
 }
 
+#[cfg(test)]
+impl<Item> SelectEvent<Item> {
+    fn select(index: usize) -> Self {
+        Self::new(SelectEventKind::Select, index)
+    }
+
+    fn submit(index: usize) -> Self {
+        Self::new(SelectEventKind::Submit, index)
+    }
+}
+
 /// Type of event that triggered the emission of a [SelectEvent]
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub enum SelectEventKind {
@@ -687,8 +695,11 @@ mod tests {
     use super::*;
     use crate::{
         input::InputEvent,
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::{Generate, test_util::TestComponent},
+        test_util::{TestTerminal, terminal},
+        view::{
+            Generate,
+            test_util::{TestComponent, TestHarness, harness},
+        },
     };
     use proptest::{collection, sample, test_runner::TestRunner};
     use ratatui::text::Span;
@@ -747,7 +758,7 @@ mod tests {
         harness: TestHarness,
         #[with(5, 3)] terminal: TestTerminal,
     ) {
-        let styles = &TuiContext::get().styles.list;
+        let styles = ViewContext::styles().list;
         let items = vec!["one", "two", "three"];
         let select: Select<&str, ListState> = Select::builder(items)
             .direction(ListDirection::BottomToTop)
@@ -759,7 +770,8 @@ mod tests {
         component
             .int::<SelectListProps>()
             .drain_draw()
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(component.selected(), Some(&"one"));
         terminal.assert_buffer_lines([
             "three".into(),
@@ -771,7 +783,8 @@ mod tests {
         component
             .int::<SelectListProps>()
             .send_key(KeyCode::Up)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(component.selected(), Some(&"two"));
         terminal.assert_buffer_lines([
             "three".into(),
@@ -783,7 +796,8 @@ mod tests {
         component
             .int::<SelectListProps>()
             .send_key(KeyCode::Down)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(component.selected(), Some(&"one"));
         terminal.assert_buffer_lines([
             "three".into(),
@@ -822,12 +836,12 @@ mod tests {
         let items = vec!["a", "b", "c"];
         let select: Select<&str, ListState> = Select::builder(items).build();
         let mut component = TestComponent::new(&harness, &terminal, select);
-        component.int().drain_draw().assert_empty();
+        component.int().drain_draw().assert().empty();
         assert_eq!(component.selected(), Some(&"a"));
-        component.int().send_key(KeyCode::Down).assert_empty();
+        component.int().send_key(KeyCode::Down).assert().empty();
         assert_eq!(component.selected(), Some(&"b"));
 
-        component.int().send_key(KeyCode::Up).assert_empty();
+        component.int().send_key(KeyCode::Up).assert().empty();
         assert_eq!(component.selected(), Some(&"a"));
     }
 
@@ -838,20 +852,23 @@ mod tests {
         let select: Select<&str, ListState> = Select::builder(items)
             .subscribe([SelectEventKind::Select])
             .build();
-        let mut component = TestComponent::new(&harness, &terminal, select);
+        let mut component = TestComponent::builder(&harness, &terminal, select)
+            .with_default_props()
+            // Event is emitted for the initial selection
+            .with_assert_events(|assert| {
+                assert.emitted([SelectEvent::select(0)]);
+            })
+            .build();
 
         // Initial selection
         assert_eq!(component.selected(), Some(&"a"));
-        component
-            .int()
-            .drain_draw()
-            .assert_emitted([SelectEvent::new(SelectEventKind::Select, 0)]);
 
         // Select another one
         component
             .int()
             .send_key(KeyCode::Down)
-            .assert_emitted([SelectEvent::new(SelectEventKind::Select, 1)]);
+            .assert()
+            .emitted([SelectEvent::select(1)]);
     }
 
     /// Test submit emitted event
@@ -862,12 +879,12 @@ mod tests {
             .subscribe([SelectEventKind::Submit])
             .build();
         let mut component = TestComponent::new(&harness, &terminal, select);
-        component.int().drain_draw().assert_empty();
 
         component
             .int()
             .send_keys([KeyCode::Down, KeyCode::Enter])
-            .assert_emitted([SelectEvent::new(SelectEventKind::Submit, 1)]);
+            .assert()
+            .emitted([SelectEvent::submit(1)]);
     }
 
     /// Test that the clicked item is selected
@@ -879,14 +896,14 @@ mod tests {
 
         // Select item by click. Click is always propagated
         assert_matches!(
-            component.int().click(0, 1).into_propagated().as_slice(),
+            component.int().click(0, 1).propagated(),
             &[Event::Input(InputEvent::Click { .. })]
         );
         assert_eq!(component.selected_index(), Some(1));
 
         // Click outside the select - does nothing
         assert_matches!(
-            component.int().click(0, 3).into_propagated().as_slice(),
+            component.int().click(0, 3).propagated(),
             &[Event::Input(InputEvent::Click { .. })]
         );
         assert_eq!(component.selected_index(), Some(1));
@@ -901,22 +918,14 @@ mod tests {
         let mut component = TestComponent::new(&harness, &terminal, select);
 
         assert_matches!(
-            component
-                .int()
-                .send_key(KeyCode::Enter)
-                .into_propagated()
-                .as_slice(),
+            component.int().send_key(KeyCode::Enter).propagated(),
             &[Event::Input(InputEvent::Key {
                 action: Some(Action::Submit),
                 ..
             })]
         );
         assert_matches!(
-            component
-                .int()
-                .send_key(KeyCode::Char(' '))
-                .into_propagated()
-                .as_slice(),
+            component.int().send_key(KeyCode::Char(' ')).propagated(),
             &[Event::Input(InputEvent::Key {
                 action: Some(Action::Toggle),
                 ..
@@ -938,33 +947,39 @@ mod tests {
             .subscribe([SelectEventKind::Select])
             .build();
         let mut component: TestComponent<'_, Select<&'static str>> =
-            TestComponent::new(&harness, &terminal, select);
+            TestComponent::builder(&harness, &terminal, select)
+                .with_default_props()
+                // Event is emitted for the initial selection
+                .with_assert_events(|assert| {
+                    assert.emitted([SelectEvent::select(0)]);
+                })
+                .build();
 
+        // Initial state
         assert_eq!(component.selected(), Some(&"a"));
-        component
-            .int()
-            .drain_draw()
-            .assert_emitted([SelectEvent::new(SelectEventKind::Select, 0)]);
 
         // Move down - skips over the disabled item
         component
             .int()
             .send_key(KeyCode::Down)
-            .assert_emitted([SelectEvent::new(SelectEventKind::Select, 2)]);
+            .assert()
+            .emitted([SelectEvent::select(2)]);
         assert_eq!(component.selected(), Some(&"c"));
 
         // Move down again - skips over the disabled item
         component
             .int()
             .send_key(KeyCode::Down)
-            .assert_emitted([SelectEvent::new(SelectEventKind::Select, 4)]);
+            .assert()
+            .emitted([SelectEvent::select(4)]);
         assert_eq!(component.selected(), Some(&"e"));
 
         // Move up - skips over the disabled item
         component
             .int()
             .send_key(KeyCode::Up)
-            .assert_emitted([SelectEvent::new(SelectEventKind::Select, 2)]);
+            .assert()
+            .emitted([SelectEvent::select(2)]);
         assert_eq!(component.selected(), Some(&"c"));
 
         // Indexes should skip disabled items
@@ -1000,18 +1015,25 @@ mod tests {
                     .disabled_indexes(disabled_indexes)
                     .subscribe([SelectEventKind::Select])
                     .build();
-            let mut component = TestComponent::new(&harness, &terminal, select);
+            let mut component =
+                TestComponent::builder(&harness, &terminal, select)
+                    .with_default_props()
+                    // Event is emitted iff there is 1+ enabled items
+                    .with_assert_events(|assert| {
+                        let first_enabled =
+                            assert.component_data().first_enabled_index();
+                        if let Some(index) = first_enabled {
+                            assert.emitted([SelectEvent::select(index)]);
+                        } else {
+                            assert.empty();
+                        }
+                    })
+                    .build();
 
-            // Drain inital events and check state
-            let first_enabled = component.first_enabled_index();
-            component
-                .int()
-                .drain_draw()
-                // Event should be emitted iff there is 1+ enabled items
-                .assert_emitted(first_enabled.map(|index| {
-                    SelectEvent::new(SelectEventKind::Select, index)
-                }));
-            assert_eq!(component.selected_index(), first_enabled);
+            assert_eq!(
+                component.selected_index(),
+                component.first_enabled_index()
+            );
 
             for input in inputs {
                 let interact = component.int().send_key(input);
@@ -1025,7 +1047,7 @@ mod tests {
                             "Selection should be none when all items are disabled"
                         );
                         // No items should emit events
-                        interact.assert_emitted([]);
+                        interact.assert().empty();
                     }
                     // Exactly one item is enabled - the selection can never
                     // change
@@ -1039,7 +1061,7 @@ mod tests {
 
                         // Should not emit an event because the selection never
                         // changes
-                        interact.assert_emitted([]);
+                        interact.assert().empty();
                     }
                     // Multiple items are enabled
                     2.. => {
@@ -1053,11 +1075,9 @@ mod tests {
                         // Event should've been emitted for the selected item,
                         // and *not* for any disabled items that may have been
                         // skipped over
-                        let event = SelectEvent::new(
-                            SelectEventKind::Select,
-                            selected_index.unwrap(),
-                        );
-                        interact.assert_emitted([event]);
+                        let event =
+                            SelectEvent::select(selected_index.unwrap());
+                        interact.assert().emitted([event]);
                     }
                 }
             }
@@ -1084,16 +1104,14 @@ mod tests {
     /// Test persisting selected item
     #[rstest]
     // Preselected item (0) never emits an event, only the persisted one
-    #[case::persisted("persisted", "persisted", &[ 1])]
+    #[case::persisted("persisted", 1)]
     // If the persisted item is disabled, we'll select the first item instead
-    #[case::disabled("disabled", "default", &[0])]
+    #[case::disabled("disabled", 0)]
     fn test_persistence(
         harness: TestHarness,
         terminal: TestTerminal,
         #[case] persisted_id: &str,
-        #[case] expected_selected: &str,
-        // Which items emit Select events?
-        #[case] expected_event_indexes: &[usize],
+        #[case] expected_index: usize,
     ) {
         #[derive(Debug, Serialize)]
         struct Key;
@@ -1143,16 +1161,14 @@ mod tests {
         .persisted(&Key)
         .subscribe([SelectEventKind::Select])
         .build();
-        let mut component = TestComponent::new(&harness, &terminal, select);
-        assert_eq!(
-            component.selected().map(|item| item.0.deref()),
-            Some(expected_selected)
-        );
-        component.int().drain_draw().assert_emitted(
-            expected_event_indexes
-                .iter()
-                .copied()
-                .map(|index| SelectEvent::new(SelectEventKind::Select, index)),
-        );
+        let component = TestComponent::builder(&harness, &terminal, select)
+            .with_default_props()
+            // Event is emitted for the persisted index. Item 0 does not get an
+            // event unless it's the one that ends up selected
+            .with_assert_events(move |assert| {
+                assert.emitted([SelectEvent::select(expected_index)]);
+            })
+            .build();
+        assert_eq!(component.selected_index(), Some(expected_index));
     }
 }

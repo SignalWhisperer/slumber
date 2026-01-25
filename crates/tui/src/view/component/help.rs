@@ -1,13 +1,10 @@
 use super::{Canvas, DrawMetadata};
-use crate::{
-    context::TuiContext,
-    view::{
-        Generate, UpdateContext,
-        common::Pane,
-        component::{Component, ComponentId, Draw},
-        context::ViewContext,
-        event::{Event, EventMatch},
-    },
+use crate::view::{
+    Generate, UpdateContext,
+    common::Pane,
+    component::{Component, ComponentId, Draw},
+    context::ViewContext,
+    event::{Event, EventMatch},
 };
 use itertools::Itertools;
 use ratatui::{
@@ -36,15 +33,18 @@ pub struct Help {
 impl Help {
     /// Get the list of bindings that will be shown in the modal
     fn bindings() -> Vec<[String; 2]> {
-        TuiContext::get()
-            .input_engine
-            .bindings()
-            .iter()
-            .filter(|(action, _)| action.visible())
-            .map(|(action, binding)| [action.to_string(), binding.to_string()])
-            // Sort alphabetically
-            .sorted_by_key(|[action, _]| action.to_string())
-            .collect()
+        ViewContext::with_input(|input| {
+            input
+                .bindings()
+                .iter()
+                .filter(|(action, _)| action.visible())
+                .map(|(action, binding)| {
+                    [action.to_string(), binding.to_string()]
+                })
+                // Sort alphabetically
+                .sorted_by_key(|[action, _]| action.to_string())
+                .collect()
+        })
     }
 }
 
@@ -78,7 +78,7 @@ impl Draw for Help {
     fn draw(&self, canvas: &mut Canvas, (): (), metadata: DrawMetadata) {
         if self.open {
             // Fullscreen mode is open
-            let styles = &TuiContext::get().styles;
+            let styles = ViewContext::styles();
 
             // General info/metadata
             let doc_link = doc_link("");
@@ -140,18 +140,15 @@ impl Draw for Help {
             // Show minimal help in the footer
             let actions = [Action::OpenActions, Action::OpenHelp, Action::Quit];
 
-            let tui_context = TuiContext::get();
-
             let text = actions
                 .into_iter()
                 .map(|action| {
-                    let binding =
-                        tui_context.input_engine.binding_display(action);
+                    let binding = ViewContext::binding_display(action);
                     format!("{binding} {action}")
                 })
                 .join(" / ");
 
-            let span = Span::styled(text, tui_context.styles.text.highlight)
+            let span = Span::styled(text, ViewContext::styles().text.highlight)
                 .into_right_aligned_line();
             canvas.render_widget(span, metadata.area());
         }
@@ -175,8 +172,8 @@ fn column_width<'a>(
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use rstest::rstest;
     use terminput::KeyCode;
@@ -191,14 +188,17 @@ mod tests {
         // Open help
         component
             .int()
-            .drain_draw() // Clear initial events
             .send_key(KeyCode::Char('?'))
-            .assert_empty();
+            .assert()
+            .empty();
         assert!(component.open);
 
         // Any key should close. Events are *not* handled by anyone else
-        //
-        component.int().send_key(KeyCode::Char('x')).assert_empty();
+        component
+            .int()
+            .send_key(KeyCode::Char('x'))
+            .assert()
+            .empty();
         assert!(!component.open);
     }
 }

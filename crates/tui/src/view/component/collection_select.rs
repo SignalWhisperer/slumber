@@ -1,5 +1,4 @@
 use crate::{
-    context::TuiContext,
     message::Message,
     util::ResultReported,
     view::{
@@ -31,22 +30,19 @@ use std::path::PathBuf;
 #[derive(Debug)]
 pub struct CollectionSelect {
     id: ComponentId,
-    select: Select<CollectionSelectItem>,
+    /// List of all known collections. `Some` when the menu is open, `None`
+    /// when closed
+    select: Option<Select<CollectionSelectItem>>,
     /// Text box to filter contents. Always in focus
     filter: TextBox,
-    /// When open, the full list of collections is displayed and the user can
-    /// filter them by text and select a different collection. When closed,
-    /// just show the current collection
-    open: bool,
 }
 
 impl CollectionSelect {
     pub fn new() -> Self {
         Self {
             id: ComponentId::default(),
-            select: build_select(""),
+            select: None,
             filter: TextBox::default().subscribe([TextBoxEvent::Change]),
-            open: false,
         }
     }
 
@@ -60,9 +56,11 @@ impl CollectionSelect {
                 .map(|metadata| metadata.display_name())
                 .traced()
                 .unwrap_or_default();
-        TuiContext::get()
-            .input_engine
-            .add_hint(collection_name, Action::SelectCollection)
+        ViewContext::add_binding_hint(collection_name, Action::SelectCollection)
+    }
+
+    fn is_open(&self) -> bool {
+        self.select.is_some()
     }
 }
 
@@ -81,27 +79,34 @@ impl Component for CollectionSelect {
         event
             .m()
             .action(|action, propagate| match action {
-                Action::SelectCollection if !self.open => self.open = true,
-                Action::Cancel if self.open => {
-                    self.open = false;
+                Action::SelectCollection if !self.is_open() => {
+                    self.select = Some(build_select(""));
+                }
+                Action::Cancel if self.is_open() => {
+                    self.select = None;
                     self.filter.set_text(String::new()); // Reset filter text box
                 }
                 _ => propagate.set(),
             })
-            .emitted(self.select.to_emitter(), |event| match event.kind {
-                // The ol' Tennessee Switcharoo
-                SelectEventKind::Select => {
-                    let item = &self.select[event];
-                    ViewContext::send_message(Message::CollectionSelect(
-                        item.path.clone(),
-                    ));
-                }
-                _ => {}
-            })
+            .emitted_opt(
+                self.select.as_ref().map(ToEmitter::to_emitter),
+                |event| match event.kind {
+                    // The ol' Tennessee Switcharoo
+                    SelectEventKind::Submit => {
+                        // Safety: can't get here without select defined
+                        let select = self.select.as_ref().unwrap();
+                        let item = &select[event];
+                        ViewContext::send_message(Message::CollectionSelect(
+                            item.path.clone(),
+                        ));
+                    }
+                    _ => {}
+                },
+            )
             .emitted(self.filter.to_emitter(), |event| {
                 // Rebuild the list with the filter applied
                 if let TextBoxEvent::Change = event {
-                    self.select = build_select(self.filter.text());
+                    self.select = Some(build_select(self.filter.text()));
                 }
             })
     }
@@ -114,9 +119,10 @@ impl Component for CollectionSelect {
 
 impl Draw for CollectionSelect {
     fn draw(&self, canvas: &mut Canvas, (): (), metadata: DrawMetadata) {
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
 
-        if self.open {
+        // Only draw something if open
+        if let Some(select) = &self.select {
             // Open - show the full list
             // We're going to expand outside of our given area and overlay over
             // the main panes
@@ -126,7 +132,7 @@ impl Draw for CollectionSelect {
                 width: canvas.area().width,
                 ..metadata.area()
             };
-            let select_height = self.select.len().min(5) as u16;
+            let select_height = select.len().min(5) as u16;
             let select_area = Rect {
                 height: select_height,
                 y: filter_area.y - select_height,
@@ -141,12 +147,7 @@ impl Draw for CollectionSelect {
                 Block::new().style(styles.list.highlight_inactive),
                 select_area,
             );
-            canvas.draw(
-                &self.select,
-                SelectListProps::modal(),
-                select_area,
-                true,
-            );
+            canvas.draw(select, SelectListProps::modal(), select_area, true);
 
             canvas.draw(
                 &self.filter,

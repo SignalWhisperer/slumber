@@ -1,18 +1,16 @@
-use crate::{
-    context::TuiContext,
-    view::{
-        Generate, UpdateContext,
-        common::{
-            Pane,
-            select::{Select, SelectEventKind, SelectListProps},
-            text_box::{TextBox, TextBoxEvent, TextBoxProps},
-        },
-        component::{
-            Canvas, Child, Component, ComponentId, Draw, DrawMetadata, ToChild,
-        },
-        event::{Emitter, Event, EventMatch, ToEmitter},
-        persistent::{PersistentKey, PersistentStore},
+use crate::view::{
+    Generate, UpdateContext,
+    common::{
+        Pane,
+        select::{Select, SelectEventKind, SelectListProps},
+        text_box::{TextBox, TextBoxEvent, TextBoxProps},
     },
+    component::{
+        Canvas, Child, Component, ComponentId, Draw, DrawMetadata, ToChild,
+    },
+    context::ViewContext,
+    event::{Emitter, Event, EventMatch, ToEmitter},
+    persistent::{PersistentKey, PersistentStore},
 };
 use ratatui::{
     layout::{Constraint, Layout},
@@ -34,10 +32,6 @@ pub struct SidebarList<State: SidebarListState> {
     select: Select<ItemWrapper<State::Item>>,
     /// Implementation-specific list state
     state: State,
-    /// The index of the last item that was selected when the list was closed.
-    /// We store this so we can revert to the previous selection when the user
-    /// closes the sidebar without submitting (via Escape).
-    last_submitted: Option<usize>,
 
     /// Text box for filtering down items in the list
     filter: TextBox,
@@ -51,14 +45,12 @@ impl<State: SidebarListState> SidebarList<State> {
     ///
     /// [SidebarListState::items] will be used to populate the list.
     pub fn new(state: State) -> Self {
-        let input_engine = &TuiContext::get().input_engine;
-        let title = input_engine.add_hint(State::TITLE, State::ACTION);
+        let title = ViewContext::add_binding_hint(State::TITLE, State::ACTION);
         let select = Self::build_select(&state, "");
-        let last_submitted = select.selected_index();
         let filter = TextBox::default()
             .placeholder(format!(
                 "{binding} to filter",
-                binding = input_engine.binding_display(Action::Search)
+                binding = ViewContext::binding_display(Action::Search)
             ))
             .subscribe([
                 TextBoxEvent::Cancel,
@@ -72,7 +64,6 @@ impl<State: SidebarListState> SidebarList<State> {
             title,
             select,
             state,
-            last_submitted,
             filter,
             filter_focused: false,
         }
@@ -128,7 +119,7 @@ impl<State: SidebarListState> SidebarList<State> {
             .collect();
 
         Select::builder(items)
-            .subscribe([SelectEventKind::Select, SelectEventKind::Submit])
+            .subscribe([SelectEventKind::Select])
             .persisted(&state.persistent_key())
             .build()
     }
@@ -150,15 +141,7 @@ impl<State: SidebarListState> Component for SidebarList<State> {
             .m()
             .click(|_, _| self.emitter.emit(SidebarListEvent::Open))
             .action(|action, propagate| match action {
-                Action::Cancel => {
-                    // Revert to whatever was selected when the list was opened,
-                    // then close
-                    if let Some(index) = self.last_submitted {
-                        self.select.select_index(index);
-                    }
-                    self.emitter.emit(SidebarListEvent::Close);
-                }
-
+                Action::Cancel => self.emitter.emit(SidebarListEvent::Close),
                 Action::Search => self.filter_focused = true,
 
                 // We can't check for our own action to open here because we
@@ -170,13 +153,7 @@ impl<State: SidebarListState> Component for SidebarList<State> {
                 SelectEventKind::Select => {
                     self.emitter.emit(SidebarListEvent::Select);
                 }
-                SelectEventKind::Submit => {
-                    // Close with the current item selected. Checkpoint this
-                    // item for the next time we're opened
-                    self.last_submitted = self.select.selected_index();
-                    self.emitter.emit(SidebarListEvent::Close);
-                }
-                SelectEventKind::Toggle => {}
+                SelectEventKind::Submit | SelectEventKind::Toggle => {}
             })
             // Emitted events from filter
             .emitted(self.filter.to_emitter(), |event| match event {
@@ -390,8 +367,8 @@ impl<T: SidebarListItem> Generate for &ItemWrapper<T> {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use itertools::Itertools;
     use rstest::rstest;
@@ -414,15 +391,20 @@ mod tests {
         use std::iter;
 
         let mut component: TestComponent<SidebarList<TestState>> =
-            TestComponent::new(&harness, &terminal, SidebarList::default());
-        // Clear initial events
-        component
-            .int()
-            .drain_draw()
-            .assert_emitted([SidebarListEvent::Select]);
+            TestComponent::builder(&harness, &terminal, SidebarList::default())
+                .with_default_props()
+                // Event is emitted for the initial selection
+                .with_assert_events(|assert| {
+                    assert.emitted([SidebarListEvent::Select]);
+                })
+                .build();
 
         // Enter filter mode
-        component.int().send_key(KeyCode::Char('/')).assert_empty();
+        component
+            .int()
+            .send_key(KeyCode::Char('/'))
+            .assert()
+            .empty();
         assert!(component.filter_focused);
 
         // Type the input
@@ -431,10 +413,8 @@ mod tests {
             .send_text(filter)
             // A select event is emitted each time the select is rebuilt, which
             // is after each entered character
-            .assert_emitted(iter::repeat_n(
-                SidebarListEvent::Select,
-                filter.len(),
-            ));
+            .assert()
+            .emitted(iter::repeat_n(SidebarListEvent::Select, filter.len()));
         let select = &component.select;
         assert_eq!(
             select
@@ -446,7 +426,7 @@ mod tests {
         );
 
         // Exit filter
-        component.int().send_key(KeyCode::Esc).assert_empty();
+        component.int().send_key(KeyCode::Esc).assert().empty();
         assert!(!component.filter_focused);
     }
 

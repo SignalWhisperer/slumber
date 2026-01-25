@@ -164,7 +164,7 @@ impl Draw for RecipeDisplay {
 
         // First line: Method + URL
         canvas.render_widget(Paragraph::new(method), method_area);
-        canvas.draw(self.url.preview(), (), url_area, false);
+        canvas.render_widget(self.url.preview(), url_area);
 
         // Navigation tabs
         canvas.draw(&self.tabs, (), tabs_area, true);
@@ -265,8 +265,8 @@ impl RecipeTableKind for HeaderTableKind {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use indexmap::{IndexMap, indexmap};
     use rstest::rstest;
@@ -297,7 +297,8 @@ mod tests {
             .int()
             .drain_draw() // Drain initial events
             .send_key(KeyCode::Right)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(component.tabs.selected(), Tab::Query);
 
         // Test persistence of both disable and override state, with a mixture
@@ -311,7 +312,8 @@ mod tests {
             // Disable+override (p1,v2)
             .send_keys([KeyCode::Down, KeyCode::Char(' '), KeyCode::Char('e')])
             .send_text("xxx")
-            .assert_empty();
+            .assert()
+            .empty();
 
         let expected = IndexMap::<_, _>::from_iter([
             (("p1".to_owned(), 0), BuildFieldOverride::Omit),

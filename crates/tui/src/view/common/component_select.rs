@@ -1,13 +1,11 @@
-use crate::{
-    context::TuiContext,
-    view::{
-        UpdateContext,
-        common::select::{Select, SelectItem, SelectState},
-        component::{
-            Canvas, Child, Component, ComponentId, Draw, DrawMetadata, ToChild,
-        },
-        event::{Event, EventMatch},
+use crate::view::{
+    UpdateContext,
+    common::select::{Select, SelectItem, SelectState},
+    component::{
+        Canvas, Child, Component, ComponentId, Draw, DrawMetadata, ToChild,
     },
+    context::ViewContext,
+    event::{Event, EventMatch},
 };
 use derive_more::derive::{Deref, DerefMut};
 use itertools::Itertools;
@@ -309,7 +307,7 @@ pub struct SelectStyles {
 impl SelectStyles {
     /// Apply no extra styling to each item
     pub fn none() -> Self {
-        let styles = &TuiContext::get().styles.table;
+        let styles = ViewContext::styles().table;
         Self {
             normal: Style::default(),
             disabled: Style::default(),
@@ -320,7 +318,7 @@ impl SelectStyles {
 
     /// Apply table styling to each item
     pub fn table() -> Self {
-        let styles = &TuiContext::get().styles.table;
+        let styles = ViewContext::styles().table;
         Self {
             normal: styles.text,
             disabled: styles.disabled,
@@ -371,8 +369,8 @@ impl SelectState for ComponentSelectState {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use proptest::{collection, test_runner::TestRunner};
     use ratatui::{
@@ -392,7 +390,7 @@ mod tests {
         );
         assert!(component.is_empty());
         // This shouldn't panic!
-        component.int().drain_draw().assert_empty();
+        component.int().drain_draw().assert().empty();
     }
 
     /// View window calculation and scrolling with variable-height items
@@ -437,7 +435,8 @@ mod tests {
                 ..Default::default()
             })
             .drain_draw()
-            .assert_empty();
+            .assert()
+            .empty();
 
         // Check the state directly first
         let view_height = terminal.area().height;
@@ -455,7 +454,7 @@ mod tests {
         // Now check what was rendered. We know the calculated window is correct
         // because we checked it against the expected list of items, so we can
         // use it generate the expected buffer
-        let highlight_style = TuiContext::get().styles.table.highlight;
+        let highlight_style = ViewContext::styles().table.highlight;
         // Generate the visible lines for *all* items
         let selected_index = component.selected_index().unwrap();
         let all_lines = component.items().enumerate().flat_map(|(i, item)| {
@@ -510,7 +509,8 @@ mod tests {
                     ..Default::default()
                 })
                 .drain_draw()
-                .assert_empty();
+                .assert()
+                .empty();
 
             // At this point, if the list is empty there isn't anything to test
             if component.is_empty() {

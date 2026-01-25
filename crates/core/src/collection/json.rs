@@ -2,8 +2,7 @@
 
 use crate::render::TemplateContext;
 use futures::future;
-use indexmap::IndexMap;
-use serde::Serialize;
+use serde::{Serialize, Serializer, ser::SerializeMap};
 use slumber_template::{
     RenderError, Template, TemplateParseError, TryFromValue,
 };
@@ -21,7 +20,15 @@ pub enum JsonTemplate {
     Number(serde_json::Number),
     String(Template),
     Array(Vec<Self>),
-    Object(IndexMap<String, Self>),
+    // A key-value mapping. Stored as a `Vec` instead of `IndexMap` because
+    // the keys are templates, which aren't hashable. We never do key lookups
+    // on this so there's no need for a map anyway.
+    #[serde(serialize_with = "serialize_object")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::HashMap<Template, Self>")
+    )]
+    Object(Vec<(Template, Self)>),
 }
 
 impl JsonTemplate {
@@ -37,7 +44,7 @@ impl JsonTemplate {
             }
             serde_json::Value::Object(map) => Self::Object(
                 map.into_iter()
-                    .map(|(key, value)| (key, Self::raw(value)))
+                    .map(|(key, value)| (Template::raw(key), Self::raw(value)))
                     .collect(),
             ),
         }
@@ -76,8 +83,11 @@ impl JsonTemplate {
             Self::Object(map) => {
                 let map = future::try_join_all(map.iter().map(
                     |(key, value)| async {
+                        let key = key
+                            .render_string(&context.streaming(false))
+                            .await?;
                         let value = value.render(context).await?;
-                        Ok::<_, RenderError>((key.clone(), value))
+                        Ok::<_, RenderError>((key, value))
                     },
                 ))
                 .await?;
@@ -101,14 +111,17 @@ impl From<&JsonTemplate> for serde_json::Value {
             JsonTemplate::String(template) => {
                 serde_json::Value::String(template.display().to_string())
             }
-            JsonTemplate::Array(json_templates) => serde_json::Value::Array(
-                json_templates.iter().map(serde_json::Value::from).collect(),
+            JsonTemplate::Array(array) => serde_json::Value::Array(
+                array.iter().map(serde_json::Value::from).collect(),
             ),
-            JsonTemplate::Object(index_map) => serde_json::Value::Object(
-                index_map
+            JsonTemplate::Object(object) => serde_json::Value::Object(
+                object
                     .iter()
                     .map(|(key, value)| {
-                        (key.clone(), serde_json::Value::from(value))
+                        (
+                            key.display().to_string(),
+                            serde_json::Value::from(value),
+                        )
                     })
                     .collect(),
             ),
@@ -147,6 +160,7 @@ impl TryFrom<serde_json::Value> for JsonTemplate {
             serde_json::Value::Object(map) => Self::Object(
                 map.into_iter()
                     .map(|(key, value)| {
+                        let key = key.parse()?;
                         let value = value.try_into()?;
                         Ok::<_, TemplateParseError>((key, value))
                     })
@@ -164,6 +178,22 @@ impl From<&'static str> for JsonTemplate {
     }
 }
 
+/// Serialize a JSON object as a mapping. The derived impl serializes as a
+/// sequence
+fn serialize_object<S>(
+    object: &Vec<(Template, JsonTemplate)>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut map = serializer.serialize_map(Some(object.len()))?;
+    for (k, v) in object {
+        map.serialize_entry(k, v)?;
+    }
+    map.end()
+}
+
 /// Error that can occur when parsing to [JsonTemplate]
 #[derive(Debug, Error)]
 pub enum JsonTemplateError {
@@ -174,4 +204,51 @@ pub enum JsonTemplateError {
     /// template
     #[error(transparent)]
     TemplateParse(#[from] TemplateParseError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        collection::Profile, render::TemplateContext, test_util::by_id,
+    };
+    use indexmap::indexmap;
+    use rstest::rstest;
+    use serde_json::json;
+    use slumber_util::{Factory, assert_result};
+
+    /// Test that object keys are rendered as templates
+    #[rstest]
+    #[case::template_key(
+        json!({"{{ user_id }}": {"name": "{{ username }}"}}),
+        Ok(json!({"123": {"name": "testuser"}})),
+    )]
+    #[case::invalid_key(
+        json!({"{{ user_id": {"name": "{{ username }}"}}),
+        Err("invalid expression"),
+    )]
+    #[tokio::test]
+    async fn test_render_template_keys(
+        #[case] input: serde_json::Value,
+        #[case] expected: Result<serde_json::Value, &str>,
+    ) {
+        let profile = Profile {
+            data: indexmap! {
+                "user_id".into() => "123".into(),
+                "username".into() => "testuser".into()
+            },
+            ..Profile::factory(())
+        };
+        let context =
+            TemplateContext::factory((by_id([profile]), indexmap! {}));
+
+        let result = match JsonTemplate::try_from(input) {
+            // If we're expecting an error, it should happen during the parse
+            // so don't check for errors during render. Saves having to
+            // consolidate the error types
+            Ok(json) => Ok(json.render(&context).await.unwrap()),
+            Err(error) => Err(error),
+        };
+        assert_result(result, expected);
+    }
 }

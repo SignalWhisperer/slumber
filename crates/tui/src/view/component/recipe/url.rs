@@ -1,11 +1,11 @@
 use crate::view::{
-    common::template_preview::TemplatePreview,
     component::{
         Canvas, Child, Component, ComponentId, Draw, DrawMetadata, ToChild,
-        override_template::EditableTemplate,
+        editable_template::EditableTemplate,
     },
     persistent::SessionKey,
 };
+use ratatui::text::Text;
 use slumber_core::collection::RecipeId;
 use slumber_template::Template;
 
@@ -27,10 +27,10 @@ impl UrlDisplay {
         }
     }
 
-    /// Get the preview widget. This is used where the URL is drawn
+    /// Get the preview text widget. This is used where the URL is drawn
     /// non-interactively
-    pub fn preview(&self) -> &TemplatePreview {
-        self.url.preview()
+    pub fn preview(&self) -> &Text {
+        self.url.text()
     }
 
     /// If the template has been overridden, get the new template
@@ -69,8 +69,8 @@ impl SessionKey for UrlKey {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use rstest::rstest;
     use slumber_util::Factory;
@@ -97,14 +97,19 @@ mod tests {
             .send_key(KeyCode::Char('e'))
             .send_text("!!!")
             .send_key(KeyCode::Enter)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(
             component.override_value(),
             Some("/users/{{ username }}!!!".into())
         );
 
         // Reset token
-        component.int().send_key(KeyCode::Char('z')).assert_empty();
+        component
+            .int()
+            .send_key(KeyCode::Char('z'))
+            .assert()
+            .empty();
         assert_eq!(component.override_value(), None);
     }
 
@@ -128,14 +133,15 @@ mod tests {
             .int()
             .action(&["Edit URL"])
             .send_keys([KeyCode::Char('!'), KeyCode::Enter])
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(
             component.override_value(),
             Some("/users/{{ username }}!".into())
         );
 
         // Edit URL
-        component.int().action(&["Reset URL"]).assert_empty();
+        component.int().action(&["Reset URL"]).assert().empty();
         assert_eq!(component.override_value(), None);
     }
 

@@ -1,5 +1,4 @@
 use crate::{
-    context::TuiContext,
     message::Message,
     util,
     view::{
@@ -16,7 +15,6 @@ use crate::{
         context::UpdateContext,
         event::{Emitter, Event, EventMatch, ToEmitter},
         persistent::{PersistentKey, PersistentStore},
-        state::Identified,
         util::{highlight, str_to_text},
     },
 };
@@ -32,7 +30,7 @@ use slumber_core::{
     util::MaybeStr,
 };
 use std::{borrow::Cow, mem, sync::Arc};
-use tokio::task::AbortHandle;
+use tokio_util::sync::CancellationToken;
 
 /// Display response body as text, with a query box to run commands on the body.
 /// The query state can be persisted by persisting this entire container.
@@ -57,9 +55,6 @@ pub struct QueryableBody<K> {
     export_text_box: CommandTextBox,
 
     /// Filtered text display
-    text_window: TextWindow,
-
-    /// Data that can update as the query changes
     text_state: TextState,
 }
 
@@ -73,9 +68,8 @@ impl<K> QueryableBody<K> {
     where
         K: PersistentKey<Value = String>,
     {
-        let input_engine = &TuiContext::get().input_engine;
-        let query_bind = input_engine.binding_display(Action::Search);
-        let export_bind = input_engine.binding_display(Action::Export);
+        let query_bind = ViewContext::binding_display(Action::Search);
+        let export_bind = ViewContext::binding_display(Action::Export);
 
         // Load query from the store. Fall back to the default if missing
         let query = PersistentStore::get(&persistent_key)
@@ -114,7 +108,6 @@ impl<K> QueryableBody<K> {
             query_text_box,
             last_executed_query: None,
             export_text_box,
-            text_window: Default::default(),
             text_state,
         };
         // If we have an initial query from the default value, run it now
@@ -131,7 +124,7 @@ impl<K> QueryableBody<K> {
         if matches!(self.query_state, CommandState::Ok)
             || self.text_state.pretty
         {
-            Some(self.text_state.text.to_string())
+            Some(self.text_state.text_window.text().to_string())
         } else {
             None
         }
@@ -139,7 +132,7 @@ impl<K> QueryableBody<K> {
 
     /// Get whatever text the user sees
     pub fn visible_text(&self) -> &Text<'_> {
-        &self.text_state.text
+        self.text_state.text_window.text()
     }
 
     fn focus(&mut self, focus: CommandFocus) {
@@ -157,8 +150,8 @@ impl<K> QueryableBody<K> {
         }
 
         // If a different command is already running, abort it
-        if let Some(handle) = self.query_state.take_abort_handle() {
-            handle.abort();
+        if let Some(token) = self.query_state.take_cancel_token() {
+            token.cancel();
         }
 
         if command.is_empty() {
@@ -179,11 +172,11 @@ impl<K> QueryableBody<K> {
             let body = self.response.body.bytes().clone();
             let command = command.to_owned();
             let emitter = self.emitter;
-            let abort_handle =
+            let cancel_token =
                 self.spawn_command(command, body, move |_, result| {
                     emitter.emit(CommandComplete(result));
                 });
-            self.query_state = CommandState::Running(abort_handle);
+            self.query_state = CommandState::Running(cancel_token);
         }
     }
 
@@ -217,24 +210,28 @@ impl<K> QueryableBody<K> {
     }
 
     /// Run the current text as a shell command in a background task
+    ///
+    /// Return a cancellation token that can be used to cancel the process
     fn spawn_command(
         &self,
         command: String,
         body: Bytes,
         on_complete: impl 'static + FnOnce(String, anyhow::Result<Vec<u8>>),
-    ) -> AbortHandle {
-        util::spawn(async move {
+    ) -> CancellationToken {
+        let cancel_token = CancellationToken::new();
+        let future = async move {
             // Store the command in history. Query and export commands are
             // stored together. We can toss the error; it gets traced by the DB
             let _ =
                 ViewContext::with_database(|db| db.insert_command(&command));
-            let shell = &TuiContext::get().config.tui.commands.shell;
+            let shell = &ViewContext::config().tui.commands.shell;
             let result = util::run_command(shell, &command, Some(&body))
                 .await
                 .with_context(|| format!("Error running `{command}`"));
             on_complete(command, result);
-        })
-        .abort_handle()
+        };
+        ViewContext::spawn(util::cancellable(&cancel_token, future));
+        cancel_token
     }
 }
 
@@ -310,7 +307,7 @@ impl<K: PersistentKey<Value = String>> Component for QueryableBody<K> {
         vec![
             self.query_text_box.to_child_mut(),
             self.export_text_box.to_child_mut(),
-            self.text_window.to_child_mut(),
+            self.text_state.text_window.to_child_mut(),
         ]
     }
 }
@@ -325,9 +322,8 @@ impl<K: PersistentKey<Value = String>> Draw for QueryableBody<K> {
             canvas.render_widget(error.generate(), body_area);
         } else {
             canvas.draw(
-                &self.text_window,
+                &self.text_state.text_window,
                 TextWindowProps {
-                    text: self.text_state.text.as_ref(),
                     margins: ScrollbarMargins {
                         bottom: 2, // Extra margin to jump over the search box
                         ..Default::default()
@@ -369,10 +365,12 @@ impl<K> ToEmitter<CommandComplete> for QueryableBody<K> {
     }
 }
 
+/// Rendered body text. This encapsulates everything that can change when the
+/// body or command changes.
 #[derive(Debug)]
 struct TextState {
-    /// The full body, which we need to track for launching commands
-    text: Identified<Text<'static>>,
+    /// Visible text
+    text_window: TextWindow,
     /// Was the text prettified? We track this so we know if we've modified the
     /// original text
     pretty: bool,
@@ -385,7 +383,7 @@ impl TextState {
         body: &ResponseBody<T>,
         prettify: bool,
     ) -> Self {
-        if TuiContext::get().config.http.is_large(body.size()) {
+        if ViewContext::config().http.is_large(body.size()) {
             // For bodies over the "large" size, skip prettification and
             // highlighting because it's slow. We could try to push this work
             // into a background thread instead, but there's no way to kill
@@ -396,16 +394,16 @@ impl TextState {
             // worth the screen real estate
             if let Some(text) = body.text() {
                 TextState {
-                    text: str_to_text(text).into(),
+                    text_window: TextWindow::new(str_to_text(text)),
                     pretty: false,
                 }
             } else {
                 // Showing binary content is a bit of a novelty, there's not
-                // much value in it. For large bodies it's not
-                // worth the CPU cycles
+                // much value in it. For large bodies it's not worth the CPU
+                // cycles
                 let text: Text = "<binary>".into();
                 TextState {
-                    text: text.into(),
+                    text_window: TextWindow::new(text),
                     pretty: false,
                 }
             }
@@ -429,7 +427,7 @@ impl TextState {
             let text =
                 highlight::highlight_if(content_type, str_to_text(&text));
             TextState {
-                text: text.into(),
+                text_window: TextWindow::new(text),
                 pretty,
             }
         } else {
@@ -437,7 +435,7 @@ impl TextState {
             let text: Text =
                 format!("{:#}", MaybeStr(body.bytes().as_ref())).into();
             TextState {
-                text: text.into(),
+                text_window: TextWindow::new(text),
                 pretty: false,
             }
         }
@@ -462,8 +460,8 @@ enum CommandState {
     /// Command has not been run yet
     #[default]
     None,
-    /// Command is running. Handle can be used to kill it
-    Running(AbortHandle),
+    /// Command is running. Token can be used to kill it
+    Running(CancellationToken),
     /// Command failed
     Error(anyhow::Error),
     // Success! The result is immediately transformed and stored in the text
@@ -472,9 +470,9 @@ enum CommandState {
 }
 
 impl CommandState {
-    fn take_abort_handle(&mut self) -> Option<AbortHandle> {
+    fn take_cancel_token(&mut self) -> Option<CancellationToken> {
         match mem::take(self) {
-            Self::Running(handle) => Some(handle),
+            Self::Running(token) => Some(token),
             other => {
                 // Put it back!
                 *self = other;
@@ -488,9 +486,11 @@ impl CommandState {
 mod tests {
     use super::*;
     use crate::{
-        context::TuiContext,
-        test_util::{TestHarness, TestTerminal, harness, run_local, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::{
+            context::ViewContext,
+            test_util::{TestComponent, TestHarness, harness},
+        },
     };
     use ratatui::{layout::Margin, text::Span};
     use rstest::{fixture, rstest};
@@ -512,7 +512,7 @@ mod tests {
 
     /// Style text to match the text window gutter
     fn gutter(text: &str) -> Span<'_> {
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
         Span::styled(text, styles.text_window.gutter)
     }
 
@@ -533,7 +533,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_text_body(
-        harness: TestHarness,
+        mut harness: TestHarness,
         #[with(27, 3)] terminal: TestTerminal,
         response: Arc<ResponseRecord>,
     ) {
@@ -546,7 +546,7 @@ mod tests {
         // Assert initial state/view
         assert_eq!(component.last_executed_query, None);
         assert_eq!(component.modified_text().as_deref(), None);
-        let styles = &TuiContext::get().styles.text_box;
+        let styles = ViewContext::styles().text_box;
         terminal.assert_buffer_lines([
             vec![gutter("1"), " {\"greeting\":\"hello\"}".into()],
             vec![gutter(" "), "".into()],
@@ -557,19 +557,16 @@ mod tests {
         ]);
 
         // Type something into the query box
-        component.int().send_key(KeyCode::Char('/')).assert_empty();
-        // The subprocess uses local tasks, so we need to run in a local set.
-        // When this future exits, all tasks are done
-        run_local(async {
-            component
-                .int()
-                .send_text("head -c 1")
-                .send_key(KeyCode::Enter)
-                .assert_empty();
-        })
-        .await;
+        component
+            .int()
+            .send_key(KeyCode::Char('/'))
+            .send_text("head -c 1")
+            .send_key(KeyCode::Enter)
+            .assert()
+            .empty();
+        harness.run_task().await; // Run spawned command
         // Command is done, handle its resulting event
-        component.int().drain_draw().assert_empty();
+        component.int().drain_draw().assert().empty();
 
         // Make sure state updated correctly
         assert_eq!(component.last_executed_query.as_deref(), Some("head -c 1"));
@@ -577,12 +574,17 @@ mod tests {
         assert_eq!(component.command_focus, CommandFocus::None);
 
         // Cancelling out of the text box should reset the query value
-        component.int().send_key(KeyCode::Char('/')).assert_empty();
+        component
+            .int()
+            .send_key(KeyCode::Char('/'))
+            .assert()
+            .empty();
         component
             .int()
             .send_text("more text")
             .send_key(KeyCode::Esc)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(component.last_executed_query.as_deref(), Some("head -c 1"));
         assert_eq!(component.query_text_box.text(), "head -c 1");
         assert_eq!(component.command_focus, CommandFocus::None);
@@ -600,7 +602,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_persistence(
-        harness: TestHarness,
+        mut harness: TestHarness,
         terminal: TestTerminal,
         response: Arc<ResponseRecord>,
     ) {
@@ -609,20 +611,16 @@ mod tests {
             .persistent_store()
             .set(&Key, &"head -c 1".to_owned());
 
-        // On init, we'll start executing the command in a local task. Wait for
-        // that to finish
-        let mut component = run_local(async {
-            TestComponent::new(
-                &harness,
-                &terminal,
-                // Default value should get tossed out
-                QueryableBody::new(Key, response, Some("initial".into())),
-            )
-        })
-        .await;
+        let mut component = TestComponent::new(
+            &harness,
+            &terminal,
+            // Default value should get tossed out
+            QueryableBody::new(Key, response, Some("initial".into())),
+        );
+        harness.run_task().await; // Run the initial task
 
         // After the command is done, there's a subsequent event with the result
-        component.int().drain_draw().assert_empty();
+        component.int().drain_draw().assert().empty();
 
         assert_eq!(component.last_executed_query.as_deref(), Some("head -c 1"));
         assert_eq!(&component.visible_text().to_string(), "{");
@@ -632,19 +630,16 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_default_query_initial(
-        harness: TestHarness,
+        mut harness: TestHarness,
         terminal: TestTerminal,
         response: Arc<ResponseRecord>,
     ) {
-        // Local task is spawned to execute the initial subprocess
-        let component = run_local(async {
-            TestComponent::new(
-                &harness,
-                &terminal,
-                QueryableBody::new(Key, response, Some("head -n 1".into())),
-            )
-        })
-        .await;
+        let component = TestComponent::new(
+            &harness,
+            &terminal,
+            QueryableBody::new(Key, response, Some("head -n 1".into())),
+        );
+        harness.run_task().await; // Run the initial task
 
         assert_eq!(component.last_executed_query.as_deref(), Some("head -n 1"));
     }
@@ -654,22 +649,19 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_default_query_persisted(
-        harness: TestHarness,
+        mut harness: TestHarness,
         terminal: TestTerminal,
         response: Arc<ResponseRecord>,
     ) {
         harness.persistent_store().set(&Key, &String::new());
 
-        // Local task is spawned to execute the initial subprocess
-        let component = run_local(async {
-            TestComponent::new(
-                &harness,
-                &terminal,
-                // Default should override the persisted value
-                QueryableBody::new(Key, response, Some("head -n 1".into())),
-            )
-        })
-        .await;
+        let component = TestComponent::new(
+            &harness,
+            &terminal,
+            // Default should override the persisted value
+            QueryableBody::new(Key, response, Some("head -n 1".into())),
+        );
+        harness.run_task().await; // Run the initial task
 
         assert_eq!(component.last_executed_query.as_deref(), Some("head -n 1"));
     }
@@ -702,12 +694,13 @@ mod tests {
             .int()
             .send_key(KeyCode::Char(':'))
             .send_text(&command)
-            .assert_empty();
-        // Triggers the background task
-        run_local(async {
-            component.int().send_key(KeyCode::Enter).assert_empty();
-        })
-        .await;
+            .assert()
+            .empty();
+
+        // Trigger the background task, then run it
+        component.int().send_key(KeyCode::Enter).assert().empty();
+        harness.run_task().await;
+
         // Success should push a notification
         assert_matches!(harness.messages().pop_now(), Message::Notify(_));
         let file_content = fs::read_to_string(&path).await.unwrap();
@@ -719,12 +712,11 @@ mod tests {
             .int()
             .send_key(KeyCode::Char(':'))
             .send_text("bad!")
-            .assert_empty();
-        run_local(async {
-            component.int().send_key(KeyCode::Enter).assert_empty();
-        })
-        .await;
-        component.int().drain_draw().assert_empty();
+            .assert()
+            .empty();
+        component.int().send_key(KeyCode::Enter).assert().empty();
+        harness.run_task().await;
+        component.int().drain_draw().assert().empty();
         assert_matches!(harness.messages().pop_now(), Message::Error { .. });
     }
 }

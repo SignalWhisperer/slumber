@@ -1,7 +1,6 @@
 //! Display for HTTP responses
 
 use crate::{
-    context::TuiContext,
     message::Message,
     view::{
         Component, ViewContext,
@@ -36,7 +35,7 @@ pub struct ResponseBodyView {
 impl ResponseBodyView {
     pub fn new(recipe_id: RecipeId, response: Arc<ResponseRecord>) -> Self {
         // Select default query based on content type
-        let config = &TuiContext::get().config.tui.commands;
+        let config = &ViewContext::config().tui.commands;
         let mime = response.mime();
         let default_query = mime
             .as_ref()
@@ -53,6 +52,7 @@ impl ResponseBodyView {
         }
     }
 
+    /// Open the visible body in the pager
     pub fn view_body(&self) {
         view_text(self.body.visible_text(), self.response.mime());
     }
@@ -162,8 +162,8 @@ impl Draw for ResponseHeadersView {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use indexmap::indexmap;
     use rstest::rstest;
@@ -267,8 +267,6 @@ mod tests {
         #[case] query: Option<&str>,
         #[case] expected_body: Option<&str>,
     ) {
-        use crate::test_util::run_local;
-
         let exchange_id = response.id;
         let exchange = Exchange {
             response: response.into(),
@@ -284,20 +282,16 @@ mod tests {
         );
 
         if let Some(query) = query {
-            // Querying requires a LocalSet to run the command in the background
-            run_local(async {
-                // Type something into the query box
-                component
-                    .int()
-                    .send_key(KeyCode::Char('/'))
-                    .send_text(query)
-                    .send_key(KeyCode::Enter)
-                    .assert_empty();
-                // Wait for the command to finish, pass results back to the
-                // component
-            })
-            .await;
-            component.int().drain_draw().assert_empty();
+            // Type something into the query box
+            component
+                .int()
+                .send_key(KeyCode::Char('/'))
+                .send_text(query)
+                .send_key(KeyCode::Enter)
+                .assert()
+                .empty();
+            harness.run_task().await; // Run the command
+            component.int().drain_draw().assert().empty();
         }
 
         component.save_response_body();

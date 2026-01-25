@@ -1,15 +1,11 @@
-use crate::{
-    context::TuiContext,
-    util,
-    view::{
-        UpdateContext,
-        component::{
-            Canvas, Child, Component, ComponentId, Draw, DrawMetadata, ToChild,
-            collection_select::CollectionSelect, help::Help,
-        },
-        event::{Emitter, Event, EventMatch},
-        state::Notification,
+use crate::view::{
+    UpdateContext, ViewContext,
+    component::{
+        Canvas, Child, Component, ComponentId, Draw, DrawMetadata, ToChild,
+        collection_select::CollectionSelect, help::Help,
     },
+    event::{Emitter, Event, EventMatch},
+    state::Notification,
 };
 use ratatui::{
     layout::{Constraint, Layout},
@@ -45,7 +41,7 @@ impl Footer {
         // accidental complexity. Since this task is a fixed length, it slows
         // tests down a lot.
         if !cfg!(test) {
-            util::spawn(async move {
+            ViewContext::spawn(async move {
                 time::sleep(Notification::DURATION).await;
                 emitter.emit(ClearNotification(id));
             });
@@ -98,7 +94,7 @@ impl Draw for Footer {
         .areas(metadata.area());
 
         canvas.render_widget(
-            Block::new().bg(TuiContext::get().styles.table.background_color),
+            Block::new().bg(ViewContext::styles().table.background_color),
             metadata.area(),
         );
 

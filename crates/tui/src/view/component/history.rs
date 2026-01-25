@@ -1,5 +1,4 @@
 use crate::{
-    context::TuiContext,
     http::{RequestStateSummary, RequestStore},
     util::ResultReported,
     view::{
@@ -31,7 +30,6 @@ use slumber_core::{
 #[derive(Debug)]
 pub struct History {
     id: ComponentId,
-    emitter: Emitter<HistoryEvent>,
     actions_emitter: Emitter<HistoryAction>,
     select: Select<RequestStateSummary>,
     // We need to retain the selected profile/recipe IDs so we can access both
@@ -51,7 +49,6 @@ impl History {
     ) -> Self {
         Self {
             id: ComponentId::default(),
-            emitter: Emitter::default(),
             actions_emitter: Emitter::default(),
             // Always start with an empty list. On startup, we'll populate when
             // the initial SelectedRecipe/SelectedProfile events are received
@@ -100,7 +97,7 @@ impl History {
         requests: Vec<RequestStateSummary>,
     ) -> Select<RequestStateSummary> {
         Select::builder(requests)
-            .subscribe([SelectEventKind::Select, SelectEventKind::Submit])
+            .subscribe([SelectEventKind::Select])
             .persisted(&SelectedRequestKey)
             .build()
     }
@@ -145,11 +142,7 @@ impl Component for History {
                         Some(id),
                     ));
                 }
-                SelectEventKind::Submit => {
-                    // Close sidebar on Enter
-                    self.emitter.emit(HistoryEvent::Close);
-                }
-                SelectEventKind::Toggle => {}
+                SelectEventKind::Submit | SelectEventKind::Toggle => {}
             })
             .broadcast(|event| match event {
                 // When the profile or recipe select changes, rebuild our list
@@ -204,8 +197,8 @@ impl Component for History {
 
 impl Draw for History {
     fn draw(&self, canvas: &mut Canvas, (): (), metadata: DrawMetadata) {
-        let input_engine = &TuiContext::get().input_engine;
-        let title = input_engine.add_hint("Request History", Action::History);
+        let title =
+            ViewContext::add_binding_hint("Request History", Action::History);
         let block = Pane {
             title: &title,
             has_focus: metadata.has_focus(),
@@ -222,12 +215,6 @@ impl Draw for History {
     }
 }
 
-impl ToEmitter<HistoryEvent> for History {
-    fn to_emitter(&self) -> Emitter<HistoryEvent> {
-        self.emitter
-    }
-}
-
 impl Generate for &RequestStateSummary {
     type Output<'this>
         = Text<'this>
@@ -238,7 +225,7 @@ impl Generate for &RequestStateSummary {
     where
         Self: 'this,
     {
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
         let description: Span = match self {
             RequestStateSummary::Building { .. } => "Initializing...".into(),
             RequestStateSummary::BuildError { .. } => {
@@ -293,19 +280,12 @@ enum HistoryAction {
     DeleteRecipeAll,
 }
 
-/// Emitted event from [History]
-#[derive(Copy, Clone, Debug)]
-pub enum HistoryEvent {
-    /// History sidebar should be closed
-    Close,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use itertools::Itertools;
     use rstest::rstest;
@@ -341,12 +321,12 @@ mod tests {
         component.refresh(&mut harness.request_store_mut());
 
         // Initial state
-        component.int().drain_draw().assert_broadcast([
+        component.int().drain_draw().assert().broadcast([
             BroadcastEvent::SelectedRequest(Some(exchanges[0].id)),
         ]);
 
         // Select the next one
-        component.int().send_key(KeyCode::Down).assert_broadcast([
+        component.int().send_key(KeyCode::Down).assert().broadcast([
             BroadcastEvent::SelectedRequest(Some(exchanges[1].id)),
         ]);
     }

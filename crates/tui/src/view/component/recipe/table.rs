@@ -1,21 +1,18 @@
-use crate::{
-    context::TuiContext,
-    view::{
-        common::{
-            Checkbox,
-            component_select::{
-                ComponentSelect, ComponentSelectProps, SelectStyles,
-            },
-            select::{Select, SelectEventKind},
+use crate::view::{
+    common::{
+        Checkbox,
+        component_select::{
+            ComponentSelect, ComponentSelectProps, SelectStyles,
         },
-        component::{
-            Canvas, Component, ComponentId, Draw, DrawMetadata, ToChild,
-            internal::Child, override_template::EditableTemplate,
-        },
-        context::UpdateContext,
-        event::{Event, EventMatch, ToEmitter},
-        persistent::{PersistentKey, PersistentStore, SessionKey},
+        select::{Select, SelectEventKind},
     },
+    component::{
+        Canvas, Component, ComponentId, Draw, DrawMetadata, ToChild,
+        editable_template::EditableTemplate, internal::Child,
+    },
+    context::{UpdateContext, ViewContext},
+    event::{Event, EventMatch, ToEmitter},
+    persistent::{PersistentKey, PersistentStore, SessionKey},
 };
 use indexmap::IndexMap;
 use ratatui::{
@@ -157,7 +154,7 @@ where
         .areas(header_area);
 
         // Draw header
-        let header_style = TuiContext::get().styles.table.header;
+        let header_style = ViewContext::styles().table.header;
         canvas.render_widget(
             props.key_header.set_style(header_style),
             key_header_area,
@@ -279,7 +276,7 @@ impl<Kind: RecipeTableKind> Draw<RecipeTableRowProps> for RecipeTableRow<Kind> {
         metadata: DrawMetadata,
     ) {
         if !self.enabled {
-            let styles = &TuiContext::get().styles;
+            let styles = ViewContext::styles();
             canvas.render_widget(
                 Block::new().style(styles.table.disabled),
                 metadata.area(),
@@ -441,8 +438,8 @@ impl<T> Serialize for TypeName<T> {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use rstest::rstest;
     use slumber_core::collection::RecipeId;
@@ -483,9 +480,9 @@ mod tests {
         // Disable the second row
         component
             .int_props(props_factory)
-            .drain_draw() // Clear initial events
             .send_keys([KeyCode::Down, KeyCode::Char(' ')])
-            .assert_empty();
+            .assert()
+            .empty();
         let selected_row = component.select.selected().unwrap();
         assert_eq!(&selected_row.key, "row1");
         assert!(!selected_row.enabled);
@@ -501,7 +498,8 @@ mod tests {
         component
             .int_props(props_factory)
             .send_key(KeyCode::Char(' '))
-            .assert_empty();
+            .assert()
+            .empty();
         let selected_row = component.select.selected().unwrap();
         assert!(selected_row.enabled);
         assert_eq!(component.to_build_overrides(), IndexMap::new());
@@ -530,12 +528,12 @@ mod tests {
         // Edit the second row
         component
             .int_props(props_factory)
-            .drain_draw() // Clear initial events
             // Open the modal
             .send_keys([KeyCode::Down, KeyCode::Char('e')])
             .send_text("!!!")
             .send_key(KeyCode::Enter)
-            .assert_empty();
+            .assert()
+            .empty();
 
         let selected_row = component.select.selected().unwrap();
         assert_eq!(&selected_row.key, "row1");
@@ -553,7 +551,8 @@ mod tests {
         component
             .int_props(props_factory)
             .send_key(KeyCode::Char('z'))
-            .assert_empty();
+            .assert()
+            .empty();
         let selected_row = component.select.selected().unwrap();
         assert!(!selected_row.value.is_overridden());
     }
@@ -574,10 +573,10 @@ mod tests {
 
         component
             .int_props(props_factory)
-            .drain_draw() // Clear initial events
             .action(&["Edit Row"])
             .send_keys([KeyCode::Char('!'), KeyCode::Enter])
-            .assert_empty();
+            .assert()
+            .empty();
 
         let selected_row = component.select.selected().unwrap();
         assert_eq!(selected_row.value.template().display(), "value0!");

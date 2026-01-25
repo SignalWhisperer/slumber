@@ -1,20 +1,17 @@
-use crate::{
-    context::TuiContext,
-    view::{
-        common::{
-            component_select::{
-                ComponentSelect, ComponentSelectProps, SelectStyles,
-            },
-            select::{Select, SelectEventKind},
+use crate::view::{
+    common::{
+        component_select::{
+            ComponentSelect, ComponentSelectProps, SelectStyles,
         },
-        component::{
-            Canvas, Component, ComponentId, Draw, DrawMetadata, ToChild,
-            internal::Child, override_template::EditableTemplate,
-        },
-        context::UpdateContext,
-        event::{Event, EventMatch, ToEmitter},
-        persistent::SessionKey,
+        select::{Select, SelectEventKind},
     },
+    component::{
+        Canvas, Component, ComponentId, Draw, DrawMetadata, ToChild,
+        editable_template::EditableTemplate, internal::Child,
+    },
+    context::{UpdateContext, ViewContext},
+    event::{Event, EventMatch, ToEmitter},
+    persistent::SessionKey,
 };
 use ratatui::{layout::Layout, prelude::Constraint, text::Span};
 use slumber_core::collection::{Authentication, RecipeId};
@@ -89,7 +86,7 @@ impl Component for AuthenticationDisplay {
 
 impl Draw for AuthenticationDisplay {
     fn draw(&self, canvas: &mut Canvas, (): (), metadata: DrawMetadata) {
-        let styles = &TuiContext::get().styles;
+        let styles = ViewContext::styles();
         let [label_area, content_area] =
             Layout::vertical([Constraint::Length(1), Constraint::Min(0)])
                 .areas(metadata.area());
@@ -287,8 +284,8 @@ impl SessionKey for AuthenticationKey {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, TestTerminal, harness, terminal},
-        view::test_util::TestComponent,
+        test_util::{TestTerminal, terminal},
+        view::test_util::{TestComponent, TestHarness, harness},
     };
     use rstest::rstest;
     use slumber_util::Factory;
@@ -313,11 +310,11 @@ mod tests {
         // Edit username
         component
             .int()
-            .drain_draw() // Clear initial messages
             .send_key(KeyCode::Char('e'))
             .send_text("!!!")
             .send_key(KeyCode::Enter)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(
             component.override_value(),
             Some(Authentication::Basic {
@@ -327,7 +324,11 @@ mod tests {
         );
 
         // Reset username
-        component.int().send_key(KeyCode::Char('z')).assert_empty();
+        component
+            .int()
+            .send_key(KeyCode::Char('z'))
+            .assert()
+            .empty();
         assert_eq!(component.override_value(), None);
 
         // Edit password
@@ -336,7 +337,8 @@ mod tests {
             .send_keys([KeyCode::Down, KeyCode::Char('e')])
             .send_text("???")
             .send_key(KeyCode::Enter)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(
             component.override_value(),
             Some(Authentication::Basic {
@@ -346,7 +348,11 @@ mod tests {
         );
 
         // Reset password
-        component.int().send_key(KeyCode::Char('z')).assert_empty();
+        component
+            .int()
+            .send_key(KeyCode::Char('z'))
+            .assert()
+            .empty();
         assert_eq!(component.override_value(), None);
     }
 
@@ -369,9 +375,9 @@ mod tests {
         // Edit password
         component
             .int()
-            .drain_draw() // Clear initial messages
             .send_keys([KeyCode::Down, KeyCode::Char('e'), KeyCode::Enter])
-            .assert_empty();
+            .assert()
+            .empty();
         // There's no override because the password wasn't actually modified
         assert_eq!(component.override_value(), None);
     }
@@ -397,7 +403,8 @@ mod tests {
             .send_key(KeyCode::Char('e'))
             .send_text("!!!")
             .send_key(KeyCode::Enter)
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(
             component.override_value(),
             Some(Authentication::Bearer {
@@ -406,7 +413,11 @@ mod tests {
         );
 
         // Reset token
-        component.int().send_key(KeyCode::Char('z')).assert_empty();
+        component
+            .int()
+            .send_key(KeyCode::Char('z'))
+            .assert()
+            .empty();
         assert_eq!(component.override_value(), None);
     }
 
@@ -426,7 +437,8 @@ mod tests {
             .int()
             .action(&["Edit Token"])
             .send_keys([KeyCode::Char('!'), KeyCode::Enter])
-            .assert_empty();
+            .assert()
+            .empty();
         assert_eq!(
             component.override_value(),
             Some(Authentication::Bearer {
@@ -434,7 +446,7 @@ mod tests {
             })
         );
 
-        component.int().action(&["Reset Token"]).assert_empty();
+        component.int().action(&["Reset Token"]).assert().empty();
         assert_eq!(component.override_value(), None);
     }
 

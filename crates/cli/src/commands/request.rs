@@ -313,7 +313,7 @@ impl BuildRequestCommand {
         let config = Config::load()?;
         let collection = collection_file.load()?;
         let database = Database::load()?.into_collection(&collection_file)?;
-        database.set_name(collection.name.as_deref());
+        database.set_name(&collection);
         let http_engine = HttpEngine::new(&config.http);
 
         // Validate profile ID, so we can provide a good error if it's invalid
@@ -453,7 +453,7 @@ struct CliHttpProvider {
     trigger_dependencies: bool,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl HttpProvider for CliHttpProvider {
     async fn get_latest_request(
         &self,

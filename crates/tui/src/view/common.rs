@@ -15,12 +15,10 @@ pub mod template_preview;
 pub mod text_box;
 pub mod text_window;
 
-use crate::{
-    context::TuiContext,
-    view::{
-        Generate,
-        util::{format_duration, format_time},
-    },
+use crate::view::{
+    Generate,
+    context::ViewContext,
+    util::{format_duration, format_time},
 };
 use chrono::{DateTime, Duration, Utc};
 use itertools::{Itertools, Position};
@@ -51,7 +49,7 @@ impl Generate for Pane<'_> {
     where
         Self: 'this,
     {
-        let styles = &TuiContext::get().styles.pane;
+        let styles = ViewContext::styles().pane;
         let (border_type, border_style) = styles.border(self.has_focus);
         Block::default()
             .borders(Borders::ALL)
@@ -174,7 +172,7 @@ impl Generate for StatusCode {
     where
         Self: 'this,
     {
-        let styles = &TuiContext::get().styles.status_code;
+        let styles = ViewContext::styles().status_code;
         let is_error = self.is_client_error() || self.is_server_error();
         Span::styled(
             self.to_string(),
@@ -215,8 +213,7 @@ impl Generate for &dyn Error {
     where
         Self: 'this,
     {
-        let mut text =
-            Text::default().style(TuiContext::get().styles.text.error);
+        let mut text = Text::default().style(ViewContext::styles().text.error);
         // Walk down the error chain and build out a tree thing
         let mut next = Some(self);
         // How far in should the next error be indented? +1 per error

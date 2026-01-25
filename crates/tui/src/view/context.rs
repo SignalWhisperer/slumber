@@ -1,27 +1,30 @@
 use crate::{
     http::RequestStore,
+    input::InputBindings,
     message::{Message, MessageSender},
     view::{
         component::ComponentMap,
         event::{Event, EventQueue},
         persistent::PersistentStore,
+        styles::Styles,
     },
 };
+use futures::FutureExt;
+use slumber_config::{Action, Config};
 use slumber_core::{collection::Collection, database::CollectionDatabase};
-use std::{cell::RefCell, sync::Arc};
+use std::{cell::RefCell, fmt::Display, sync::Arc};
 use tracing::debug;
 
 /// Thread-local context container, which stores mutable state needed in the
-/// view thread. Unlike [TuiContext](crate::TuiContext), this state can be
-/// mutable because it's not shared between threads. Some pieces of this state
-/// *are* shared between threads, but that's because they are internally
-/// thread-safe.
+/// view thread
 ///
 /// The main purpose of this is to prevent an absurd amount of plumbing required
-/// to get all these individual pieces to every place they're needed in the
-/// view code. We're leaning heavily on the fact that the view is
-/// single-threaded here.
+/// to get all these individual pieces to every place they're needed in the view
+/// code. We're leaning heavily on the fact that the view is single-threaded
+/// here.
 pub struct ViewContext {
+    /// App-level configuration
+    config: Arc<Config>,
     /// The request collection. This is immutable through the lifespan of the
     /// view; the entire view is rebuilt when the collection reloads.
     collection: Arc<Collection>,
@@ -30,9 +33,13 @@ pub struct ViewContext {
     database: CollectionDatabase,
     /// Queue of unhandled view events, which will be used to update view state
     event_queue: EventQueue,
+    /// Input:action bindings. Used in the view to show hotkey help/suggestions
+    input_bindings: InputBindings,
     /// Sender to the async message queue, which is used to transmit data and
     /// trigger callbacks that require additional threading/background work.
     messages_tx: MessageSender,
+    /// Visual styles, derived from the theme
+    styles: Styles,
 }
 
 impl ViewContext {
@@ -52,19 +59,26 @@ impl ViewContext {
         static INSTANCE: RefCell<Option<ViewContext>> = RefCell::default();
     }
 
-    /// Initialize the view context for this thread
+    /// Initialize or overwrite the view context
     pub fn init(
+        config: Arc<Config>,
         collection: Arc<Collection>,
         database: CollectionDatabase,
         messages_tx: MessageSender,
     ) {
         debug!("Initializing view context");
+        let styles = Styles::new(&config.tui.theme);
+        let input_bindings =
+            InputBindings::new(config.tui.input_bindings.clone());
         Self::INSTANCE.with_borrow_mut(|context| {
             *context = Some(Self {
+                config,
                 collection,
                 database,
                 event_queue: EventQueue::default(),
+                input_bindings,
                 messages_tx,
+                styles,
             });
         });
     }
@@ -87,14 +101,24 @@ impl ViewContext {
         })
     }
 
-    /// Get a pointer to the request collection
+    /// Shortcut for [InputBindings::add_hint]
+    pub fn add_binding_hint(label: impl Display, action: Action) -> String {
+        Self::with(|context| context.input_bindings.add_hint(label, action))
+    }
+
+    /// Shortcut for [InputBindings::binding_display]
+    pub fn binding_display(action: Action) -> String {
+        Self::with(|context| context.input_bindings.binding_display(action))
+    }
+
+    /// Get the request collection
     pub fn collection() -> Arc<Collection> {
         Self::with(|context| Arc::clone(&context.collection))
     }
 
-    /// Execute a function with access to the database
-    pub fn with_database<T>(f: impl FnOnce(&CollectionDatabase) -> T) -> T {
-        Self::with(|context| f(&context.database))
+    /// Get the global configuration
+    pub fn config() -> Arc<Config> {
+        Self::with(|context| Arc::clone(&context.config))
     }
 
     /// Queue a view event to be handled by the component tree
@@ -117,6 +141,28 @@ impl ViewContext {
     /// Send an async message on the channel
     pub fn send_message(message: impl Into<Message>) {
         Self::with(|context| context.messages_tx.send(message));
+    }
+
+    /// Spawn a future in a new task on the main thread. See [Message::Spawn]
+    pub fn spawn(future: impl 'static + Future<Output = ()>) {
+        Self::send_message(Message::Spawn(future.boxed_local()));
+    }
+
+    /// Get a clone of the stylesheet
+    pub fn styles() -> Styles {
+        // Not sure how expensive this clone is. My guess is it's negligible,
+        // but at some point I might profile it
+        Self::with(|context| context.styles.clone())
+    }
+
+    /// Execute a function with access to the database
+    pub fn with_database<T>(f: impl FnOnce(&CollectionDatabase) -> T) -> T {
+        Self::with(|context| f(&context.database))
+    }
+
+    /// Execute a function with access to the input bindings
+    pub fn with_input<T>(f: impl FnOnce(&InputBindings) -> T) -> T {
+        Self::with(|context| f(&context.input_bindings))
     }
 }
 
@@ -152,8 +198,11 @@ pub struct UpdateContext<'a> {
 mod tests {
     use super::*;
     use crate::{
-        test_util::{TestHarness, assert_events, harness},
-        view::event::DeleteTarget,
+        test_util::assert_events,
+        view::{
+            event::DeleteTarget,
+            test_util::{TestHarness, harness},
+        },
     };
     use rstest::rstest;
     use slumber_util::assert_matches;
