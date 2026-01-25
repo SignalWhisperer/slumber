@@ -146,61 +146,65 @@ mod tui {
             let default = Self::default();
             let mut deserializer = StructDeserializer::new(yaml)?;
             let config = Self {
-                primary: deserializer
+                primary_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("primary_color").or(Adopt(default.primary)),
+                        Field::new("primary_color")
+                            .or(Adopt(default.primary_color)),
                         source_map,
                     )?
                     .0,
-                inactive: deserializer
+                inactive_color: deserializer
                     .get::<Adopt<_>>(
                         Field::new("inactive_color")
-                            .or(Adopt(default.inactive)),
+                            .or(Adopt(default.inactive_color)),
                         source_map,
                     )?
                     .0,
-                secondary: deserializer
+                secondary_color: deserializer
                     .get::<Adopt<_>>(
                         Field::new("secondary_color")
-                            .or(Adopt(default.secondary)),
+                            .or(Adopt(default.secondary_color)),
                         source_map,
                     )?
                     .0,
-                success: deserializer
+                success_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("success_color").or(Adopt(default.success)),
+                        Field::new("success_color")
+                            .or(Adopt(default.success_color)),
                         source_map,
                     )?
                     .0,
-                error: deserializer
+                error_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("error_color").or(Adopt(default.error)),
+                        Field::new("error_color")
+                            .or(Adopt(default.error_color)),
                         source_map,
                     )?
                     .0,
-                text: deserializer
+                text_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("text_color").or(Adopt(default.text)),
+                        Field::new("text_color").or(Adopt(default.text_color)),
                         source_map,
                     )?
                     .0,
-                text_highlight: deserializer
+                primary_text_color: deserializer
                     .get::<Adopt<_>>(
                         Field::new("primary_text_color")
-                            .or(Adopt(default.text_highlight)),
+                            .or(Adopt(default.primary_text_color)),
                         source_map,
                     )?
                     .0,
-                background: deserializer
+                background_color: deserializer
                     .get::<Adopt<_>>(
                         Field::new("background_color")
-                            .or(Adopt(default.background)),
+                            .or(Adopt(default.background_color)),
                         source_map,
                     )?
                     .0,
-                border: deserializer
+                border_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("border_color").or(Adopt(default.border)),
+                        Field::new("border_color")
+                            .or(Adopt(default.border_color)),
                         source_map,
                     )?
                     .0,
@@ -227,39 +231,45 @@ mod tui {
             let default = Self::default();
             let mut deserializer = StructDeserializer::new(yaml)?;
             let config = Self {
-                comment: deserializer
+                comment_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("comment_color").or(Adopt(default.comment)),
+                        Field::new("comment_color")
+                            .or(Adopt(default.comment_color)),
                         source_map,
                     )?
                     .0,
-                builtin: deserializer
+                builtin_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("builtin_color").or(Adopt(default.builtin)),
+                        Field::new("builtin_color")
+                            .or(Adopt(default.builtin_color)),
                         source_map,
                     )?
                     .0,
-                escape: deserializer
+                escape_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("escape_color").or(Adopt(default.escape)),
+                        Field::new("escape_color")
+                            .or(Adopt(default.escape_color)),
                         source_map,
                     )?
                     .0,
-                number: deserializer
+                number_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("number_color").or(Adopt(default.number)),
+                        Field::new("number_color")
+                            .or(Adopt(default.number_color)),
                         source_map,
                     )?
                     .0,
-                string: deserializer
+                string_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("string_color").or(Adopt(default.string)),
+                        Field::new("string_color")
+                            .or(Adopt(default.string_color)),
                         source_map,
                     )?
                     .0,
-                special: deserializer
+                special_color: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("special_color").or(Adopt(default.special)),
+                        Field::new("special_color")
+                            .or(Adopt(default.special_color)),
                         source_map,
                     )?
                     .0,
