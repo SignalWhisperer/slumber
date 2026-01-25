@@ -20,17 +20,24 @@ pub struct Theme {
     /// Color representing error (e.g. for 4xx status codes)
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub error: Color,
+    /// Color for regular text
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub text: Color,
+    /// Color for text on top of the primary color. This should contrast with
+    /// the primary color well
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub text_highlight: Color,
+    /// Color for the background of the application
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub background: Color,
+    /// Color of the borders when not selected/focused
+    /// (otherwise primary color is used)
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub border: Color,
+    /// Color for inactive text and components
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub inactive: Color,
-
+    /// User-configurable visual settings for syntax highlighting
     pub syntax_highlighting: SyntaxHighlighting,
 }
 
@@ -51,21 +58,28 @@ impl Default for Theme {
     }
 }
 
+/// User-configurable visual settings for syntax highlighting.
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default, deny_unknown_fields)]
 pub struct SyntaxHighlighting {
+    /// Color for comments
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub comment: Color,
+    /// Color for builtins
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub builtin: Color,
+    /// Color for escape characters
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub escape: Color,
+    /// Color for numbers
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub number: Color,
+    /// Color for strings
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub string: Color,
+    /// Color for special characters
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub special: Color,
 }

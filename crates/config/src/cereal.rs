@@ -154,7 +154,8 @@ mod tui {
                     .0,
                 inactive: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("inactive").or(Adopt(default.inactive)),
+                        Field::new("inactive_color")
+                            .or(Adopt(default.inactive)),
                         source_map,
                     )?
                     .0,
@@ -179,32 +180,33 @@ mod tui {
                     .0,
                 text: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("primary_text_color")
-                            .or(Adopt(default.text)),
+                        Field::new("text_color").or(Adopt(default.text)),
                         source_map,
                     )?
                     .0,
                 text_highlight: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("text_highlight")
+                        Field::new("primary_text_color")
                             .or(Adopt(default.text_highlight)),
                         source_map,
                     )?
                     .0,
                 background: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("background").or(Adopt(default.background)),
+                        Field::new("background_color")
+                            .or(Adopt(default.background)),
                         source_map,
                     )?
                     .0,
                 border: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("border").or(Adopt(default.border)),
+                        Field::new("border_color").or(Adopt(default.border)),
                         source_map,
                     )?
                     .0,
                 syntax_highlighting: deserializer.get(
-                    Field::new("syntax").or(default.syntax_highlighting),
+                    Field::new("syntax_highlighting")
+                        .or(default.syntax_highlighting),
                     source_map,
                 )?,
             };
@@ -227,37 +229,37 @@ mod tui {
             let config = Self {
                 comment: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("comment").or(Adopt(default.comment)),
+                        Field::new("comment_color").or(Adopt(default.comment)),
                         source_map,
                     )?
                     .0,
                 builtin: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("builtin").or(Adopt(default.builtin)),
+                        Field::new("builtin_color").or(Adopt(default.builtin)),
                         source_map,
                     )?
                     .0,
                 escape: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("escape").or(Adopt(default.escape)),
+                        Field::new("escape_color").or(Adopt(default.escape)),
                         source_map,
                     )?
                     .0,
                 number: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("number").or(Adopt(default.number)),
+                        Field::new("number_color").or(Adopt(default.number)),
                         source_map,
                     )?
                     .0,
                 string: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("string").or(Adopt(default.string)),
+                        Field::new("string_color").or(Adopt(default.string)),
                         source_map,
                     )?
                     .0,
                 special: deserializer
                     .get::<Adopt<_>>(
-                        Field::new("special").or(Adopt(default.special)),
+                        Field::new("special_color").or(Adopt(default.special)),
                         source_map,
                     )?
                     .0,
