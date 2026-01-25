@@ -195,9 +195,10 @@ where
                 x: 0,
                 y: 0,
                 width,
-                // Height of the virtual buffer is either the height of all visible
-                // elements or, if the view is big enough to fit the entire list,
-                // the height of the view
+                // Height of the virtual buffer is either the height of all
+                // visible elements or, if the view is big
+                // enough to fit the entire list, the height of
+                // the view
                 height: cmp::max(
                     window.iter().map(|friend| friend.height).sum(),
                     target_area.height,
