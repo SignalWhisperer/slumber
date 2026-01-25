@@ -32,6 +32,8 @@ pub struct FormStyles {
     pub title: Style,
     /// Style for a input field title when selected/focused
     pub title_highlight: Style,
+    /// Style for an input field value when not selected/focused
+    pub content: Style,
 }
 
 /// Styles for List component
@@ -179,6 +181,7 @@ impl Styles {
                 title_highlight: Style::default()
                     .fg(theme.primary)
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                content: Style::default().fg(theme.inactive),
             },
             list: ListStyles {
                 highlight: Style::default()
