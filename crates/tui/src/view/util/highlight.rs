@@ -381,12 +381,14 @@ fn split_cow(s: Cow<'_, str>, at: usize) -> (Cow<'_, str>, Cow<'_, str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::view::test_util::{TestHarness, harness};
     use pretty_assertions::assert_eq;
     use ratatui::style::Color;
+    use rstest::rstest;
 
     /// Test that JSON is highlighted, by existing styling is retained
-    #[test]
-    fn test_highlight() {
+    #[rstest]
+    fn test_highlight(_harness: TestHarness) {
         fn fg(color: Color) -> Style {
             Style::default().fg(color)
         }
