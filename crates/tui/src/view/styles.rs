@@ -22,7 +22,7 @@ pub struct Styles {
     pub text: TextStyle,
     pub text_box: TextBoxStyle,
     pub text_window: TextWindowStyle,
-    pub syntax_highlighting: SyntaxHighlightingStyle,
+    pub syntax: SyntaxStyle,
 }
 
 /// Styles for the recipe input form
@@ -162,7 +162,7 @@ pub struct TextWindowStyle {
 
 /// Styles for syntax highlighting
 #[derive(Clone, Debug)]
-pub struct SyntaxHighlightingStyle {
+pub struct SyntaxStyle {
     pub comment: Style,
     pub builtin: Style,
     pub escape: Style,
@@ -298,20 +298,14 @@ impl Styles {
             text_window: TextWindowStyle {
                 gutter: Style::default().fg(theme.inactive_color),
             },
-            syntax_highlighting: SyntaxHighlightingStyle {
+            syntax: SyntaxStyle {
                 // We only style by foreground for syntax
-                comment: Style::default()
-                    .fg(theme.syntax_highlighting.comment_color),
-                builtin: Style::default()
-                    .fg(theme.syntax_highlighting.builtin_color),
-                escape: Style::default()
-                    .fg(theme.syntax_highlighting.escape_color),
-                number: Style::default()
-                    .fg(theme.syntax_highlighting.number_color),
-                string: Style::default()
-                    .fg(theme.syntax_highlighting.string_color),
-                special: Style::default()
-                    .fg(theme.syntax_highlighting.special_color),
+                comment: Style::default().fg(theme.syntax.comment_color),
+                builtin: Style::default().fg(theme.syntax.builtin_color),
+                escape: Style::default().fg(theme.syntax.escape_color),
+                number: Style::default().fg(theme.syntax.number_color),
+                string: Style::default().fg(theme.syntax.string_color),
+                special: Style::default().fg(theme.syntax.special_color),
             },
         }
     }

@@ -74,7 +74,7 @@ fn deserialize_http_config(
 /// TUI-specific config deserialization
 #[cfg(feature = "tui")]
 mod tui {
-    use crate::tui::{CommandsConfig, SyntaxHighlighting, Theme, TuiConfig};
+    use crate::tui::{CommandsConfig, Syntax, Theme, TuiConfig};
     use ratatui_core::style::Color;
     use serde::de::{self, value::StringDeserializer};
     use slumber_util::yaml::{
@@ -208,18 +208,15 @@ mod tui {
                         source_map,
                     )?
                     .0,
-                syntax_highlighting: deserializer.get(
-                    Field::new("syntax_highlighting")
-                        .or(default.syntax_highlighting),
-                    source_map,
-                )?,
+                syntax: deserializer
+                    .get(Field::new("syntax").or(default.syntax), source_map)?,
             };
             deserializer.done()?;
             Ok(config)
         }
     }
 
-    impl DeserializeYaml for SyntaxHighlighting {
+    impl DeserializeYaml for Syntax {
         fn expected() -> Expected {
             Expected::Mapping
         }

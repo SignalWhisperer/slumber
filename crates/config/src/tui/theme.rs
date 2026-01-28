@@ -20,6 +20,10 @@ pub struct Theme {
     /// Color representing error (e.g. for 4xx status codes)
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub error_color: Color,
+    // Theoretically we could calculate this based on primary color, but for
+    // named or indexed colors, we don't know the exact RGB code since it
+    // depends on the user's terminal theme. It's much easier and less
+    // fallible to just have the user specify it.
     /// Color for regular text
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub text_color: Color,
@@ -38,7 +42,7 @@ pub struct Theme {
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub inactive_color: Color,
     /// User-configurable visual settings for syntax highlighting
-    pub syntax_highlighting: SyntaxHighlighting,
+    pub syntax: Syntax,
 }
 
 impl Default for Theme {
@@ -53,7 +57,7 @@ impl Default for Theme {
             background_color: Color::Reset,
             border_color: Color::Reset,
             primary_text_color: Color::White,
-            syntax_highlighting: Default::default(),
+            syntax: Default::default(),
         }
     }
 }
@@ -63,7 +67,7 @@ impl Default for Theme {
 #[cfg_attr(test, derive(PartialEq))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default, deny_unknown_fields)]
-pub struct SyntaxHighlighting {
+pub struct Syntax {
     /// Color for comments
     #[cfg_attr(feature = "schema", schemars(with = "schema::Color"))]
     pub comment_color: Color,
@@ -84,7 +88,7 @@ pub struct SyntaxHighlighting {
     pub special_color: Color,
 }
 
-impl Default for SyntaxHighlighting {
+impl Default for Syntax {
     fn default() -> Self {
         Self {
             comment_color: Color::Gray,

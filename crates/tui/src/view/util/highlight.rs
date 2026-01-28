@@ -154,7 +154,7 @@ impl HighlightName {
     }
 
     fn style(self) -> Style {
-        let styles = ViewContext::styles().syntax_highlighting;
+        let styles = ViewContext::styles().syntax;
         match self {
             Self::Comment => styles.comment,
             Self::ConstantBuiltin => styles.builtin,

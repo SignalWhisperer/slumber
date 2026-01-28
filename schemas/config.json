@@ -183,7 +183,7 @@
         "background_color": "Reset",
         "border_color": "Reset",
         "text_color": "White",
-        "syntax_highlighting": {
+        "syntax": {
           "comment_color": "Gray",
           "builtin_color": "Blue",
           "escape_color": "Green",
@@ -436,15 +436,15 @@
           "$ref": "#/$defs/Color",
           "default": "White"
         },
-        "syntax_highlighting": {
+        "syntax": {
           "description": "User-configurable visual settings for syntax highlighting",
-          "$ref": "#/$defs/SyntaxHighlighting",
+          "$ref": "#/$defs/Syntax",
           "default": {}
         }
       },
       "additionalProperties": false
     },
-    "SyntaxHighlighting": {
+    "Syntax": {
       "description": "User-configurable visual settings for syntax highlighting.",
       "type": "object",
       "properties": {
