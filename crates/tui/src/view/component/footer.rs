@@ -9,7 +9,6 @@ use crate::view::{
 };
 use ratatui::{
     layout::{Constraint, Layout},
-    style::Stylize,
     widgets::Block,
 };
 use tokio::time;
@@ -94,7 +93,7 @@ impl Draw for Footer {
         .areas(metadata.area());
 
         canvas.render_widget(
-            Block::new().bg(ViewContext::styles().table.background_color),
+            Block::new().style(ViewContext::styles().footer.default),
             metadata.area(),
         );
 

@@ -23,6 +23,7 @@ pub struct Styles {
     pub text_box: TextBoxStyle,
     pub text_window: TextWindowStyle,
     pub syntax: SyntaxStyle,
+    pub footer: FooterStyle,
 }
 
 /// Styles for the recipe input form
@@ -171,6 +172,12 @@ pub struct SyntaxStyle {
     pub special: Style,
 }
 
+/// Styles for the Footer component
+#[derive(Clone, Debug)]
+pub struct FooterStyle {
+    pub default: Style,
+}
+
 impl Styles {
     pub fn new(theme: &Theme) -> Self {
         Self {
@@ -306,6 +313,11 @@ impl Styles {
                 number: Style::default().fg(theme.syntax.number_color),
                 string: Style::default().fg(theme.syntax.string_color),
                 special: Style::default().fg(theme.syntax.special_color),
+            },
+            footer: FooterStyle {
+                default: Style::default()
+                    .fg(theme.text_color)
+                    .bg(theme.background_color),
             },
         }
     }
