@@ -55,7 +55,7 @@ pub struct ListStyles {
 pub struct MenuStyles {
     pub border: Style,
     pub border_type: BorderType,
-    pub normal: Style,
+    pub default: Style,
 }
 
 /// Styles for the Modal component
@@ -63,7 +63,7 @@ pub struct MenuStyles {
 pub struct ModalStyles {
     pub border: Style,
     pub border_type: BorderType,
-    pub normal: Style,
+    pub default: Style,
 }
 
 /// Styles for Pane component
@@ -78,7 +78,7 @@ pub struct PaneStyles {
     /// Pane border characters used when selected/focused
     pub border_type_selected: BorderType,
     /// Pane generic style
-    pub generic: Style,
+    pub default: Style,
 }
 
 impl PaneStyles {
@@ -209,7 +209,7 @@ impl Styles {
                     .fg(theme.primary_color)
                     .bg(theme.background_color),
                 border_type: BorderType::Rounded,
-                normal: Style::default()
+                default: Style::default()
                     .bg(theme.background_color)
                     .fg(theme.text_color),
             },
@@ -218,7 +218,7 @@ impl Styles {
                     .fg(theme.primary_color)
                     .bg(theme.background_color),
                 border_type: BorderType::Double,
-                normal: Style::default()
+                default: Style::default()
                     .bg(theme.background_color)
                     .fg(theme.text_color),
             },
@@ -229,7 +229,7 @@ impl Styles {
                     .add_modifier(Modifier::BOLD),
                 border_type: BorderType::Rounded,
                 border_type_selected: BorderType::Double,
-                generic: Style::default()
+                default: Style::default()
                     .bg(theme.background_color)
                     .fg(theme.text_color),
             },

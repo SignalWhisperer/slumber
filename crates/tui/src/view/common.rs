@@ -56,7 +56,7 @@ impl Generate for Pane<'_> {
             .border_type(border_type)
             .border_style(border_style)
             .merge_borders(MergeStrategy::Fuzzy)
-            .style(styles.generic)
+            .style(styles.default)
             .title(self.title)
     }
 }

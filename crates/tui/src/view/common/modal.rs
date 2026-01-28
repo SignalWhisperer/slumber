@@ -154,7 +154,7 @@ where
             .border_style(styles.border)
             .border_type(styles.border_type)
             .title(modal.title())
-            .style(styles.normal);
+            .style(styles.default);
         // Add one cell of X padding so text doesn't butt up against the border;
         // that would interfere with word-based selection
         let margin = Margin::new(1, 0);
