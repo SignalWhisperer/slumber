@@ -20,7 +20,7 @@ use tree_sitter_highlight::{
     Highlight, HighlightConfiguration, HighlightEvent, Highlighter,
 };
 
-use crate::view::context::ViewContext;
+use crate::view::{context::ViewContext, styles::SyntaxStyle};
 
 thread_local! {
     /// Cache the highlighter and its configurations, because we only need one
@@ -38,6 +38,8 @@ pub fn highlight(content_type: ContentType, mut text: Text<'_>) -> Text<'_> {
         let config = configs
             .entry(content_type)
             .or_insert_with(|| get_config(content_type));
+
+        let styles = ViewContext::styles().syntax;
 
         // Each line in the input corresponds to one line in the output, so we
         // can mutate each line inline
@@ -62,7 +64,7 @@ pub fn highlight(content_type: ContentType, mut text: Text<'_>) -> Text<'_> {
                     }
                     Ok(HighlightEvent::HighlightStart(index)) => {
                         let name = HighlightName::from_index(index);
-                        builder.set_style(name.style());
+                        builder.set_style(name.style(&styles));
                     }
                     Ok(HighlightEvent::HighlightEnd) => {
                         builder.reset_style();
@@ -153,8 +155,7 @@ impl HighlightName {
             .unwrap_or_else(|| panic!("Highlight index out of bounds: {index}"))
     }
 
-    fn style(self) -> Style {
-        let styles = ViewContext::styles().syntax;
+    fn style(self, styles: &SyntaxStyle) -> Style {
         match self {
             Self::Comment => styles.comment,
             Self::ConstantBuiltin => styles.builtin,
